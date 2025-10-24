@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  nrk-downloader:
+    build: .
+    container_name: nrk-downloader
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+    restart: unless-stopped
+    # Optional: Add volume for logs
+    # volumes:
+    #   - ./logs:/app/logs
+
