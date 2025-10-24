@@ -232,11 +232,18 @@ Hvis MP4 ikke er mulig, fall tilbake til original container med korrekt Content-
 - Øk `maxDuration` i `app/api/download/route.ts`
 - For Vercel: vurder annen hosting-løsning
 
+## ✨ Nye funksjoner (v1.1.0)
+
+- ✅ **Strukturert logging og monitoring** - Bedre feilsøking og overvåking
+- ✅ **Fremdriftsindikator** - Viser prosent, nedlastede/totale bytes og gjenstående tid
+- ✅ **Drag & Drop** - Dra og slipp NRK URL-er direkte fra nettleseren
+- ✅ **Forbedrede loading-animasjoner** - Moderne spinner og animert progress bar
+- ✅ **Clipboard-støtte** - Lim inn URL-er med Ctrl+V
+
 ## 📝 Fremtidige forbedringer
 
 - [ ] Støtte for undertekster
 - [ ] Valg av videokvalitet (720p, 1080p, etc.)
-- [ ] Fremdriftsindikator med prosent
 - [ ] Historikk over nedlastede videoer
 - [ ] HEAD-request for å hente metadata før nedlasting
 - [ ] Redis-basert rate limiting for skalerbarhet

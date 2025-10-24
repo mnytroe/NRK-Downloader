@@ -3,6 +3,8 @@
  * For production, use Redis or similar distributed store
  */
 
+import { logger } from './logger';
+
 interface RateLimitRecord {
   count: number;
   ts: number;
@@ -25,16 +27,19 @@ export function rateLimitOk(req: Request): boolean {
   // No record or window expired - allow and reset
   if (!rec || now - rec.ts > WINDOW_MS) {
     hits.set(ip, { count: 1, ts: now });
+    logger.debug('Rate limit: new window started', { ip, count: 1 });
     return true;
   }
   
   // Within window and over limit - deny
   if (rec.count >= MAX_REQUESTS) {
+    logger.warn('Rate limit exceeded', { ip, count: rec.count, maxRequests: MAX_REQUESTS });
     return false;
   }
   
   // Within window and under limit - allow and increment
   rec.count += 1;
+  logger.debug('Rate limit: request allowed', { ip, count: rec.count, maxRequests: MAX_REQUESTS });
   return true;
 }
 

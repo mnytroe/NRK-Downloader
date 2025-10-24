@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { sanitizeFilename } from '@/lib/filename';
 import { rateLimitOk } from '@/lib/rateLimit';
+import { logger, generateRequestId } from '@/lib/logger';
 
 // Force Node.js runtime (not Edge)
 export const runtime = 'nodejs';
@@ -80,11 +81,10 @@ async function streamFromStdout(url: string, safeName: string, req: NextRequest)
   // Log errors on process exit
   child.on('exit', (code, signal) => {
     if (code !== 0 && code !== null) {
-      console.error(`yt-dlp exited with code ${code}`);
-      console.error('stderr:', stderrBuf);
+      logger.ytDlpError(url, stderrBuf, code);
     }
     if (signal) {
-      console.log(`yt-dlp killed with signal ${signal}`);
+      logger.info(`yt-dlp killed with signal ${signal}`, { url });
     }
   });
 
@@ -114,7 +114,7 @@ async function streamFromTempFile(url: string, safeName: string, req: NextReques
     url,
   ];
 
-  console.log('Downloading to temp file:', tmpDir);
+  logger.debug('Downloading to temp file', { tmpDir, url });
   
   return new Promise<NextResponse>((resolve, reject) => {
     const child = spawn('yt-dlp', args);
@@ -125,7 +125,7 @@ async function streamFromTempFile(url: string, safeName: string, req: NextReques
       stderrBuf += chunk;
       // Log progress
       if (chunk.includes('[download]')) {
-        console.log(chunk.trim());
+        logger.debug('yt-dlp progress', { progress: chunk.trim() });
       }
     });
 
@@ -141,7 +141,7 @@ async function streamFromTempFile(url: string, safeName: string, req: NextReques
 
     child.on('exit', (code) => {
       if (code !== 0) {
-        console.error('yt-dlp failed:', stderrBuf);
+        logger.ytDlpError(url, stderrBuf, code);
         resolve(new NextResponse('Download failed', { status: 500 }));
         return;
       }
@@ -152,7 +152,7 @@ async function streamFromTempFile(url: string, safeName: string, req: NextReques
         const downloadedFile = files.find(f => f.startsWith('out.'));
         
         if (!downloadedFile) {
-          console.error('No output file found');
+          logger.error('No output file found after download', undefined, { tmpDir, files });
           resolve(new NextResponse('Download failed - no output file', { status: 500 }));
           return;
         }
@@ -183,16 +183,16 @@ async function streamFromTempFile(url: string, safeName: string, req: NextReques
         headers.set('Content-Disposition', `attachment; filename="${safeName}"`);
         headers.set('Cache-Control', 'no-store');
 
-        console.log('Starting stream:', downloadedFile);
+        logger.debug('Starting stream', { downloadedFile, contentType });
         resolve(new NextResponse(webStream, { headers }));
       } catch (err) {
-        console.error('Stream error:', err);
+        logger.error('Stream error', err as Error, { downloadedFile });
         resolve(new NextResponse('Failed to stream file', { status: 500 }));
       }
     });
 
     child.on('error', (err) => {
-      console.error('Process error:', err);
+      logger.error('Process error', err, { url });
       resolve(new NextResponse('Download process failed', { status: 500 }));
     });
   });
@@ -202,8 +202,17 @@ async function streamFromTempFile(url: string, safeName: string, req: NextReques
  * POST handler - download NRK video
  */
 export async function POST(req: NextRequest) {
+  const requestId = generateRequestId();
+  logger.setRequestId(requestId);
+  
+  const startTime = Date.now();
+  const ip = (req.headers.get('x-forwarded-for') || '').split(',')[0].trim() || 'unknown';
+  
+  logger.info('Download request received', { ip, requestId });
+
   // Rate limiting
   if (!rateLimitOk(req)) {
+    logger.rateLimitHit(ip, 5);
     return new NextResponse('Rate limit exceeded. Try again later.', { status: 429 });
   }
 
@@ -212,15 +221,39 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     url = body.url;
-  } catch {
+    
+    // Debug: Log the raw URL from request body
+    logger.debug('Raw URL from request body', { url, requestId });
+    
+    // Clean duplicated URL if needed
+    if (url.includes('nrk.no') && url.split('nrk.no').length > 2) {
+      const originalUrl = url;
+      // Find the first complete URL by looking for the pattern - use non-greedy matching
+      const nrkMatch = url.match(/https?:\/\/[^\/]*nrk\.no[^h]*?(?=https|$)/);
+      if (nrkMatch) {
+        url = nrkMatch[0];
+        logger.debug('Cleaned duplicated URL', { originalUrl, cleanedUrl: url, requestId });
+      } else {
+        // Fallback: split by nrk.no and reconstruct
+        const parts = url.split('nrk.no');
+        if (parts.length >= 2) {
+          url = parts[0] + 'nrk.no' + parts[1];
+          logger.debug('Cleaned duplicated URL (fallback)', { originalUrl, cleanedUrl: url, requestId });
+        }
+      }
+    }
+  } catch (error) {
+    logger.error('Invalid request body', error as Error, { ip });
     return new NextResponse('Invalid request body', { status: 400 });
   }
 
   if (!url || typeof url !== 'string') {
+    logger.warn('Missing or invalid URL', { url, ip });
     return new NextResponse('Missing or invalid URL', { status: 400 });
   }
 
   if (!isAllowedNrk(url)) {
+    logger.warn('Non-NRK URL attempted', { url, ip });
     return new NextResponse('Only NRK URLs are allowed (tv.nrk.no, www.nrk.no, nrk.no, radio.nrk.no)', { status: 400 });
   }
 
@@ -228,17 +261,28 @@ export async function POST(req: NextRequest) {
   const title = getVideoTitle(url);
   const safeName = sanitizeFilename(title) + '.mp4';
 
-  console.log(`Download request: ${url}`);
-  console.log(`Filename: ${safeName}`);
+  logger.downloadStart(url, safeName, ip);
 
   // Try direct streaming first (fastest), fallback to temp file if it fails
-  console.log('Attempting direct stream from yt-dlp...');
+  logger.debug('Attempting direct stream from yt-dlp');
   
   try {
-    return await streamFromStdout(url, safeName, req);
+    const response = await streamFromStdout(url, safeName, req);
+    const duration = Date.now() - startTime;
+    logger.downloadComplete(url, safeName, duration);
+    return response;
   } catch (err) {
-    console.warn('Direct streaming failed, falling back to temp file method:', err);
-    return await streamFromTempFile(url, safeName, req);
+    logger.warn('Direct streaming failed, falling back to temp file method', { error: (err as Error).message });
+    try {
+      const response = await streamFromTempFile(url, safeName, req);
+      const duration = Date.now() - startTime;
+      logger.downloadComplete(url, safeName, duration);
+      return response;
+    } catch (fallbackErr) {
+      const duration = Date.now() - startTime;
+      logger.downloadError(url, fallbackErr as Error, { duration, method: 'temp-file' });
+      return new NextResponse('Download failed', { status: 500 });
+    }
   }
 }
 
