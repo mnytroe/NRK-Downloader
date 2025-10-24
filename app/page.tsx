@@ -219,135 +219,126 @@ export default function Page() {
   }[status];
 
   return (
-    <main className={`min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center p-6 ${isDarkMode ? 'dark:from-gray-900 dark:to-gray-800' : ''}`}>
-      <div className={`bg-white rounded-lg shadow-lg max-w-2xl w-full p-8 space-y-6 ${isDarkMode ? 'dark:bg-gray-800' : ''}`}>
-        <div className="flex justify-between items-start">
-          <div className="space-y-2">
-            <h1 className={`text-3xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>NRK Nedlaster</h1>
-            <p className={`${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-              Last ned videoer fra NRK til din enhet
-            </p>
-          </div>
-          
-          {/* Dark mode toggle */}
+    <main className="shell">
+      <section className="panel panel-hover fade-in">
+        <header className="space-y-2 slide-up">
+          <h1 className="title">NRK Nedlaster</h1>
+          <p className="muted">
+            Last ned videoer fra NRK til din enhet
+          </p>
+        </header>
+
+        <div className="toolbar">
           <button
             onClick={toggleDarkMode}
-            className={`p-2 rounded-lg transition-colors cursor-pointer z-10 relative ${isDarkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'}`}
+            className="btn-ghost"
             aria-label="Toggle dark mode"
             type="button"
           >
             {isDarkMode ? (
-              <svg className="w-6 h-6 text-yellow-500" fill="currentColor" viewBox="0 0 20 20">
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clipRule="evenodd" />
               </svg>
             ) : (
-              <svg className="w-6 h-6 text-gray-600" fill="currentColor" viewBox="0 0 20 20">
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
                 <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
               </svg>
             )}
+            Toggle tema
+          </button>
+          <div className="text-sm muted">1080p • MP4</div>
+        </div>
+
+        <div className="field">
+          <label className="label" htmlFor="url-input">
+            NRK URL
+          </label>
+          <div
+            className={`relative w-full border-2 border-dashed rounded-xl transition-colors ${
+              isDragOver 
+                ? 'border-blue-400 bg-blue-50 dark:bg-blue-900/20' 
+                : 'border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500'
+            }`}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+          >
+            <input
+              id="url-input"
+              type="text"
+              className="input"
+              placeholder="https://tv.nrk.no/serie/... eller dra og slipp URL her"
+              value={url}
+              onChange={(e) => setUrl(cleanUrl(e.target.value))}
+              onKeyPress={handleKeyPress}
+              onPaste={handlePaste}
+              disabled={isWorking}
+            />
+            {isDragOver && (
+              <div className="absolute inset-0 flex items-center justify-center bg-blue-50 dark:bg-blue-900/20 bg-opacity-90 rounded-xl">
+                <div className="text-blue-600 dark:text-blue-400 font-medium">
+                  📎 Slip NRK URL her
+                </div>
+              </div>
+            )}
+          </div>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            💡 Tips: Du kan også dra og slippe URL-er fra nettleseren eller lime inn med Ctrl+V
+          </p>
+          {url && url !== cleanUrl(url) && (
+            <div className="mt-2 p-2 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded text-xs text-gray-800 dark:text-gray-200">
+              <strong>Ryddet URL:</strong> {cleanUrl(url)}
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center gap-3">
+          <button
+            className="btn-primary flex-1"
+            onClick={onDownload}
+            disabled={isWorking}
+          >
+            {isWorking ? 'Laster ned...' : 'Last ned'}
+          </button>
+          <button
+            className="btn-outline"
+            onClick={onAbort}
+            disabled={!isWorking}
+          >
+            Avbryt
           </button>
         </div>
 
-        <div className="space-y-4">
-          <div>
-            <label htmlFor="url-input" className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-              NRK URL
-            </label>
-            <div
-              className={`relative w-full border-2 border-dashed rounded-lg transition-colors ${
-                isDragOver 
-                  ? 'border-blue-400 bg-blue-50 dark:bg-blue-900/20' 
-                  : 'border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500'
-              }`}
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onDrop={handleDrop}
-            >
-              <input
-                id="url-input"
-                type="text"
-                className={`w-full border-0 rounded-lg px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition bg-transparent placeholder-gray-500 dark:placeholder-gray-400 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}
-                placeholder="https://tv.nrk.no/serie/... eller dra og slipp URL her"
-                value={url}
-                onChange={(e) => setUrl(cleanUrl(e.target.value))}
-                onKeyPress={handleKeyPress}
-                onPaste={handlePaste}
-                disabled={isWorking}
-              />
-              {isDragOver && (
-                <div className="absolute inset-0 flex items-center justify-center bg-blue-50 dark:bg-blue-900/20 bg-opacity-90 rounded-lg">
-                  <div className="text-blue-600 dark:text-blue-400 font-medium">
-                    📎 Slip NRK URL her
-                  </div>
-                </div>
-              )}
+        {/* Simple loading indicator */}
+        {isWorking && (
+          <div className="text-center py-4">
+            <div className="inline-flex items-center space-x-2">
+              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 dark:border-blue-400"></div>
+              <span className="text-gray-600 dark:text-gray-300">Laster ned...</span>
             </div>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-              💡 Tips: Du kan også dra og slippe URL-er fra nettleseren eller lime inn med Ctrl+V
+          </div>
+        )}
+
+        {/* Status display */}
+        <div className="pt-2">
+          <div className="flex items-center gap-2">
+            {isWorking && (
+              <div className="animate-spin rounded-full h-4 w-4 border-2 border-blue-500 border-t-transparent"></div>
+            )}
+            <p className={`font-medium ${statusColor}`}>
+              Status: {statusText}
             </p>
-            {url && url !== cleanUrl(url) && (
-              <div className="mt-2 p-2 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded text-xs text-gray-800 dark:text-gray-200">
-                <strong>Ryddet URL:</strong> {cleanUrl(url)}
-              </div>
-            )}
           </div>
-
-          <div className="flex gap-3">
-            <button
-              className={`flex-1 rounded-lg px-6 py-3 font-medium transition disabled:cursor-not-allowed ${
-                isDarkMode 
-                  ? 'bg-white text-black hover:bg-gray-200 disabled:bg-gray-600' 
-                  : 'bg-black text-white hover:bg-gray-800 disabled:bg-gray-400'
-              }`}
-              onClick={onDownload}
-              disabled={isWorking}
-            >
-              {isWorking ? 'Laster ned...' : 'Last ned'}
-            </button>
-            <button
-              className={`border rounded-lg px-6 py-3 font-medium transition disabled:cursor-not-allowed ${
-                isDarkMode 
-                  ? 'border-gray-600 text-gray-300 hover:bg-gray-700 disabled:bg-gray-800' 
-                  : 'border-gray-300 text-gray-700 hover:bg-gray-50 disabled:bg-gray-100'
-              }`}
-              onClick={onAbort}
-              disabled={!isWorking}
-            >
-              Avbryt
-            </button>
-          </div>
-
-          {/* Simple loading indicator */}
-          {isWorking && (
-            <div className="text-center py-4">
-              <div className="inline-flex items-center space-x-2">
-                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 dark:border-blue-400"></div>
-                <span className="text-gray-600 dark:text-gray-300">Laster ned...</span>
-              </div>
-            </div>
+          {errorMsg && (
+            <p className="text-sm text-red-600 dark:text-red-400 mt-1">
+              {errorMsg}
+            </p>
           )}
-
-          {/* Status display */}
-          <div className="pt-2">
-            <div className="flex items-center gap-2">
-              {isWorking && (
-                <div className="animate-spin rounded-full h-4 w-4 border-2 border-blue-500 border-t-transparent"></div>
-              )}
-              <p className={`font-medium ${statusColor}`}>
-                Status: {statusText}
-              </p>
-            </div>
-            {errorMsg && (
-              <p className="text-sm text-red-600 dark:text-red-400 mt-1">
-                {errorMsg}
-              </p>
-            )}
-          </div>
         </div>
 
         {/* Info section */}
         <div className="border-t border-gray-200 dark:border-gray-700 pt-6 space-y-3">
-          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4">
             <h3 className="font-semibold text-blue-900 dark:text-blue-100 mb-2">Støttede domener</h3>
             <ul className="text-sm text-blue-800 dark:text-blue-200 space-y-1">
               <li>• tv.nrk.no</li>
@@ -357,7 +348,7 @@ export default function Page() {
             </ul>
           </div>
 
-          <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
+          <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-xl p-4">
             <h3 className="font-semibold text-yellow-900 dark:text-yellow-100 mb-2">Viktig informasjon</h3>
             <p className="text-sm text-yellow-800 dark:text-yellow-200">
               Du må ha rettigheter til å laste ned innholdet. Dette verktøyet er kun for personlig bruk 
@@ -369,7 +360,7 @@ export default function Page() {
             Laget med Next.js • Bruker yt-dlp og ffmpeg
           </div>
         </div>
-      </div>
+      </section>
     </main>
   );
 }
