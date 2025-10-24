@@ -13,6 +13,20 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="no">
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              try {
+                const darkMode = localStorage.getItem('darkMode') === 'true';
+                if (darkMode) {
+                  document.documentElement.classList.add('dark');
+                }
+              } catch (e) {}
+            `,
+          }}
+        />
+      </head>
       <body className="antialiased">
         {children}
       </body>
