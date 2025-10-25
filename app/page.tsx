@@ -221,31 +221,28 @@ export default function Page() {
   return (
     <main className="shell">
       <section className="panel panel-hover fade-in">
-        <header className="space-y-2 slide-up">
-          <h1 className="title">NRK Nedlaster</h1>
-          <p className="muted">
-            Last ned videoer fra NRK til din enhet
-          </p>
-        </header>
+        <header className="flex items-start justify-between">
+          <div>
+            <h1 className="title">NRK-nedlaster</h1>
+            <p className="muted">Lim inn NRK-URL, velg kvalitet og last ned.</p>
+          </div>
 
-        <div className="toolbar">
+          {/* Tema-knapp øverst til høyre */}
           <button
-            onClick={toggleDarkMode}
-            className="btn-ghost"
-            aria-label="Toggle dark mode"
             type="button"
+            aria-label="Bytt tema"
+            className="icon-btn"
+            onClick={toggleDarkMode}
+            title="Bytt lys/mørk"
           >
+            {/* Valgfritt: vis ikon basert på nåværende tema */}
             {isDarkMode ? (
-              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clipRule="evenodd" />
-              </svg>
+              <svg width="20" height="20" viewBox="0 0 24 24" role="img" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3a7 7 0 1 0 9.79 9.79z"/></svg>
             ) : (
-              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
-              </svg>
+              <svg width="20" height="20" viewBox="0 0 24 24" role="img" aria-hidden="true"><path d="M6.76 4.84l-1.8-1.79-1.41 1.41 1.79 1.8 1.42-1.42zM4 10.5H1v2h3v-2zm9-9.95h2V3.5h-2V.55zm7.45 3.91l-1.41-1.41-1.79 1.8 1.41 1.41 1.79-1.8zm-3.21 13.7l1.79 1.8 1.41-1.41-1.8-1.79-1.4 1.4zM20 10.5v2h3v-2h-3zm-8-5c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6-2.69-6-6-6zm-1 16.95h2V19.5h-2v2.95zm-7.45-3.91l1.41 1.41 1.79-1.8-1.41-1.41-1.79 1.8z"/></svg>
             )}
           </button>
-        </div>
+        </header>
 
         <div className="field">
           <label className="label" htmlFor="url-input">
