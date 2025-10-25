@@ -18,10 +18,33 @@ const ALLOWED_HOSTS = new Set(['tv.nrk.no', 'www.nrk.no', 'nrk.no', 'radio.nrk.n
 
 /**
  * Validate that URL is from allowed NRK domains
+ * Blocks URL tricks like userinfo@host, IP literals, and non-HTTP schemes
  */
 function isAllowedNrk(urlStr: string): boolean {
   try {
     const u = new URL(urlStr);
+    
+    // Block non-HTTP schemes
+    if (!['http:', 'https:'].includes(u.protocol)) {
+      return false;
+    }
+    
+    // Block IP literals (IPv4 and IPv6)
+    if (u.hostname.match(/^\d+\.\d+\.\d+\.\d+$/) || u.hostname.includes(':')) {
+      return false;
+    }
+    
+    // Block localhost and local domains
+    if (u.hostname === 'localhost' || u.hostname.endsWith('.local')) {
+      return false;
+    }
+    
+    // Block userinfo in URL (e.g., https://nrk.no@evil.tld/)
+    if (u.username || u.password) {
+      return false;
+    }
+    
+    // Check if hostname is in allowed list (exact match only)
     return ALLOWED_HOSTS.has(u.hostname);
   } catch {
     return false;
