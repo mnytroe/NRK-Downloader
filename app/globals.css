@@ -33,7 +33,7 @@
     @apply inline-flex items-center justify-center gap-2 rounded-xl font-semibold px-4 py-2 transition
            focus-visible:ring-2 focus-visible:ring-brand-500/70 disabled:opacity-60 disabled:pointer-events-none;
   }
-  .btn-primary { @apply btn bg-black text-white hover:bg-gray-800 dark:bg-white dark:text-black dark:hover:bg-gray-200; }
+  .btn-primary { @apply btn bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700; }
   .btn-ghost   { @apply btn bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-900 dark:text-gray-100; }
   .btn-outline { @apply btn border border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700; }
 

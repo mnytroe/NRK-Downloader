@@ -304,32 +304,28 @@ export default function Page() {
           </button>
         </div>
 
-        {/* Simple loading indicator */}
-        {isWorking && (
+        {/* Loading indicator OR Status display */}
+        {isWorking ? (
           <div className="text-center py-4">
             <div className="inline-flex items-center space-x-2">
               <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 dark:border-blue-400"></div>
               <span className="text-gray-600 dark:text-gray-300">Laster ned...</span>
             </div>
           </div>
-        )}
-
-        {/* Status display */}
-        <div className="pt-2">
-          <div className="flex items-center gap-2">
-            {isWorking && (
-              <div className="animate-spin rounded-full h-4 w-4 border-2 border-blue-500 border-t-transparent"></div>
+        ) : (
+          <div className="pt-2">
+            <div className="flex items-center gap-2">
+              <p className={`font-medium ${statusColor}`}>
+                Status: {statusText}
+              </p>
+            </div>
+            {errorMsg && (
+              <p className="text-sm text-red-600 dark:text-red-400 mt-1">
+                {errorMsg}
+              </p>
             )}
-            <p className={`font-medium ${statusColor}`}>
-              Status: {statusText}
-            </p>
           </div>
-          {errorMsg && (
-            <p className="text-sm text-red-600 dark:text-red-400 mt-1">
-              {errorMsg}
-            </p>
-          )}
-        </div>
+        )}
 
         {/* Info section */}
         <div className="border-t border-gray-200 dark:border-gray-700 pt-6 space-y-3">
