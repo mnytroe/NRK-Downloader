@@ -11,8 +11,8 @@ import { logger, generateRequestId } from '@/lib/logger';
 // Force Node.js runtime (not Edge)
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-// Uncomment for Vercel with longer timeout:
-// export const maxDuration = 300;
+// Set longer timeout for video downloads
+export const maxDuration = 600; // 10 minutes
 
 const ALLOWED_HOSTS = new Set(['tv.nrk.no', 'www.nrk.no', 'nrk.no', 'radio.nrk.no']);
 
@@ -36,11 +36,25 @@ function getVideoTitle(url: string): string {
     const meta = spawnSync('yt-dlp', ['--no-warnings', '--print', '%(title)s', url], {
       encoding: 'utf-8',
       timeout: 10000, // 10s timeout
-      env: { ...process.env, PYTHONIOENCODING: 'utf-8' }, // Ensure UTF-8 output
+      env: { 
+        ...process.env, 
+        PYTHONIOENCODING: 'utf-8',
+        LANG: 'en_US.UTF-8',
+        LC_ALL: 'en_US.UTF-8'
+      }, // Ensure UTF-8 output
     });
     if (meta.status === 0 && meta.stdout) {
-      // Clean up any encoding issues
-      return meta.stdout.trim().replace(/[^\x20-\x7E\u00A0-\uFFFF]/g, '');
+      // Clean up any encoding issues and normalize Norwegian characters
+      let title = meta.stdout.trim();
+      
+      // Handle common encoding issues - preserve Norwegian characters
+      title = title
+        .replace(/[^\x20-\x7E\u00C0-\u017F]/g, '') // Keep Latin chars including Norwegian
+        .replace(/[^\w\s\-\.æøåÆØÅ]/g, '') // Keep safe chars + Norwegian
+        .replace(/\s+/g, ' ') // Normalize spaces
+        .trim();
+      
+      return title || 'nrk-video';
     }
   } catch (err) {
     console.error('Failed to get video title:', err);
