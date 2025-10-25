@@ -53,20 +53,19 @@
   /* Input wrapper: clearer ring in dark mode */
   .drop-wrap {
     @apply relative w-full rounded-xl transition
-           ring-1 ring-gray-300 dark:ring-white/20
-           hover:ring-gray-400 dark:hover:ring-white/30
+           border border-dashed border-zinc-400 dark:border-zinc-600
+           hover:border-zinc-500 dark:hover:border-zinc-500
+           focus:ring-2 focus:ring-indigo-500
            bg-transparent;
   }
   
-  /* Striplet border for dark mode */
+  /* Enhanced dashed border for dark mode */
   .drop-wrap.dark-mode-dashed {
-    @apply ring-0 border-2 border-dashed border-gray-500;
-  }
-  .drop-wrap.dark-mode-dashed:hover {
-    @apply border-gray-400;
+    @apply border-2 border-dashed border-zinc-500 dark:border-zinc-400
+           hover:border-zinc-600 dark:hover:border-zinc-300;
   }
   .drop-wrap.dark-mode-dashed:has(input:focus-visible) {
-    @apply border-blue-500 ring-2 ring-blue-500/20;
+    @apply border-indigo-500 ring-2 ring-indigo-500/20;
   }
   .drop-wrap:has(input:focus-visible) {
     @apply ring-2 ring-brand-500/80;

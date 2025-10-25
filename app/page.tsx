@@ -82,6 +82,18 @@ export default function Page() {
     }
   }, [cleanUrl]);
 
+  // Handle keyboard navigation for drop zone
+  const handleDropZoneKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      // Focus the input field when drop zone is activated
+      const input = document.getElementById('url-input') as HTMLInputElement;
+      if (input) {
+        input.focus();
+      }
+    }
+  }, []);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -151,6 +163,13 @@ export default function Page() {
       return;
     }
 
+    // Check if URL contains NRK domain
+    if (!cleanedUrl.includes('nrk.no')) {
+      setErrorMsg('Kun NRK-lenker støttes');
+      setStatus('error');
+      return;
+    }
+
     setStatus('working');
     setErrorMsg('');
     
@@ -192,9 +211,18 @@ export default function Page() {
       if (e?.name === 'AbortError') {
         setStatus('aborted');
         setErrorMsg('Nedlasting avbrutt');
+      } else if (e?.message?.includes('Rate limit')) {
+        setStatus('error');
+        setErrorMsg('Rate limit: prøv igjen om 60s');
+      } else if (e?.message?.includes('Only NRK URLs')) {
+        setStatus('error');
+        setErrorMsg('Kun NRK-lenker støttes');
+      } else if (e?.message?.includes('Invalid request')) {
+        setStatus('error');
+        setErrorMsg('Ugyldig URL-format');
       } else {
         setStatus('error');
-        setErrorMsg(e?.message || 'Ukjent feil');
+        setErrorMsg(e?.message || 'Nedlasting feilet');
       }
     }
   }
@@ -251,9 +279,13 @@ export default function Page() {
           </label>
           <div
             className={`drop-wrap ${isDragOver ? 'drop-wrap--drag' : ''} ${isDarkMode ? 'dark-mode-dashed' : ''}`}
+            role="button"
+            tabIndex={0}
+            aria-label="Lim inn NRK URL eller dra og slipp fil her"
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
+            onKeyDown={handleDropZoneKeyDown}
           >
             <input
               id="url-input"
