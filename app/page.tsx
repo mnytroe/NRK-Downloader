@@ -105,7 +105,7 @@ export default function Page() {
     }
   }, [isDarkMode]);
 
-  // Initialize dark mode from localStorage - let script in <head> handle DOM
+  // Initialize dark mode from localStorage
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const savedDarkMode = localStorage.getItem('darkMode');
@@ -114,7 +114,13 @@ export default function Page() {
       const shouldUseDarkMode = savedDarkMode === null ? true : savedDarkMode === 'true';
       console.log('🔄 Initializing dark mode from localStorage:', shouldUseDarkMode);
       setIsDarkMode(shouldUseDarkMode);
-      // Script in <head> already handles DOM classes, so we just sync state
+      
+      // Apply the class immediately
+      if (shouldUseDarkMode) {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+      }
     }
   }, []);
 

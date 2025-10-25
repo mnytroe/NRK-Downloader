@@ -12,23 +12,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="no">
-      <head>
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
-              try {
-                const savedDarkMode = localStorage.getItem('darkMode');
-                // Default to dark mode if no preference is saved
-                const shouldUseDarkMode = savedDarkMode === null ? true : savedDarkMode === 'true';
-                if (shouldUseDarkMode) {
-                  document.documentElement.classList.add('dark');
-                }
-              } catch (e) {}
-            `,
-          }}
-        />
-      </head>
+    <html lang="no" className="dark">
       <body className="antialiased">
         {children}
       </body>
