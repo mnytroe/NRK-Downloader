@@ -18,8 +18,10 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{
             __html: `
               try {
-                const darkMode = localStorage.getItem('darkMode') === 'true';
-                if (darkMode) {
+                const savedDarkMode = localStorage.getItem('darkMode');
+                // Default to dark mode if no preference is saved
+                const shouldUseDarkMode = savedDarkMode === null ? true : savedDarkMode === 'true';
+                if (shouldUseDarkMode) {
                   document.documentElement.classList.add('dark');
                 }
               } catch (e) {}

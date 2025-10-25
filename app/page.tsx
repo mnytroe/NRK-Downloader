@@ -10,7 +10,7 @@ export default function Page() {
   const [status, setStatus] = useState<Status>('idle');
   const [errorMsg, setErrorMsg] = useState<string>('');
   const [isDragOver, setIsDragOver] = useState(false);
-  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(true);
   const abortRef = useRef<AbortController | null>(null);
 
   const isWorking = status === 'working';
@@ -108,9 +108,12 @@ export default function Page() {
   // Initialize dark mode from localStorage - let script in <head> handle DOM
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const savedDarkMode = localStorage.getItem('darkMode') === 'true';
-      console.log('🔄 Initializing dark mode from localStorage:', savedDarkMode);
-      setIsDarkMode(savedDarkMode);
+      const savedDarkMode = localStorage.getItem('darkMode');
+      // If no saved preference, default to dark mode (true)
+      // If saved preference exists, use it
+      const shouldUseDarkMode = savedDarkMode === null ? true : savedDarkMode === 'true';
+      console.log('🔄 Initializing dark mode from localStorage:', shouldUseDarkMode);
+      setIsDarkMode(shouldUseDarkMode);
       // Script in <head> already handles DOM classes, so we just sync state
     }
   }, []);
@@ -241,7 +244,7 @@ export default function Page() {
             NRK URL
           </label>
           <div
-            className={`drop-wrap ${isDragOver ? 'drop-wrap--drag' : ''}`}
+            className={`drop-wrap ${isDragOver ? 'drop-wrap--drag' : ''} ${isDarkMode ? 'dark-mode-dashed' : ''}`}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
