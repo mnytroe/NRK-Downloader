@@ -79,7 +79,13 @@ async function streamFromStdout(url: string, safeName: string, req: NextRequest)
   // Kill process on abort
   req.signal.addEventListener('abort', () => {
     try {
-      child.kill('SIGKILL');
+      child.kill('SIGTERM');
+      // Force kill after 5 seconds if process doesn't exit gracefully
+      setTimeout(() => {
+        if (!child.killed) {
+          child.kill('SIGKILL');
+        }
+      }, 5000);
     } catch (err) {
       console.error('Failed to kill yt-dlp process:', err);
     }
@@ -109,6 +115,7 @@ async function streamFromStdout(url: string, safeName: string, req: NextRequest)
   headers.set('Content-Type', 'video/mp4');
   headers.set('Content-Disposition', `attachment; filename="${safeName}"`);
   headers.set('Cache-Control', 'no-store');
+  headers.set('X-Content-Type-Options', 'nosniff');
 
   return new NextResponse(webStream, { status: 200, headers });
 }
@@ -146,7 +153,13 @@ async function streamFromTempFile(url: string, safeName: string, req: NextReques
     // Kill on abort
     req.signal.addEventListener('abort', () => {
       try {
-        child.kill('SIGKILL');
+        child.kill('SIGTERM');
+        // Force kill after 5 seconds if process doesn't exit gracefully
+        setTimeout(() => {
+          if (!child.killed) {
+            child.kill('SIGKILL');
+          }
+        }, 5000);
         reject(new Error('Aborted'));
       } catch (err) {
         console.error('Failed to kill process:', err);
@@ -196,6 +209,7 @@ async function streamFromTempFile(url: string, safeName: string, req: NextReques
         headers.set('Content-Type', contentType);
         headers.set('Content-Disposition', `attachment; filename="${safeName}"`);
         headers.set('Cache-Control', 'no-store');
+        headers.set('X-Content-Type-Options', 'nosniff');
 
         logger.debug('Starting stream', { downloadedFile, contentType });
         resolve(new NextResponse(webStream, { headers }));

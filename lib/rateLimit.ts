@@ -1,6 +1,21 @@
 /**
  * Simple in-memory rate limiter (MVP)
- * For production, use Redis or similar distributed store
+ * 
+ * PRODUCTION IMPROVEMENTS NEEDED:
+ * - Use Redis or similar distributed store for horizontal scaling
+ * - Implement per-route rate limiting (different limits for different endpoints)
+ * - Add rate limit headers (X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset)
+ * - Consider sliding window vs fixed window algorithms
+ * - Add rate limit bypass for authenticated users
+ * - Implement distributed rate limiting across multiple server instances
+ * 
+ * Example Redis implementation:
+ * ```typescript
+ * const key = `rate_limit:${ip}:${route}`;
+ * const current = await redis.incr(key);
+ * if (current === 1) await redis.expire(key, WINDOW_SECONDS);
+ * return current <= MAX_REQUESTS;
+ * ```
  */
 
 import { logger } from './logger';
