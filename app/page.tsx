@@ -244,9 +244,7 @@ export default function Page() {
                 <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
               </svg>
             )}
-            Toggle tema
           </button>
-          <div className="text-sm muted">1080p • MP4</div>
         </div>
 
         <div className="field">
