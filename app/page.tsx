@@ -350,7 +350,15 @@ export default function Page() {
           </div>
 
           <div className="text-xs text-gray-500 dark:text-gray-400 text-center">
-            Laget med Next.js • Bruker yt-dlp og ffmpeg
+            Laget med Next.js ved hjelp av yt-dlp og ffmpeg. Vibbekodet av{' '}
+            <a 
+              href="https://github.com/mnytroe/NRK-Downloader" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="text-blue-600 dark:text-blue-400 hover:underline"
+            >
+              mnytroe
+            </a>
           </div>
         </div>
       </section>
