@@ -204,18 +204,10 @@ export default function Page() {
 
   const statusText = {
     idle: 'Klar',
-    working: 'Laster ned... Dette kan ta litt tid.',
-    done: 'Ferdig! Filen lastes ned.',
+    working: 'Laster ned...',
+    done: 'Ferdig!',
     error: 'Feil',
     aborted: 'Avbrutt',
-  }[status];
-
-  const statusColor = {
-    idle: 'text-gray-600 dark:text-gray-400',
-    working: 'text-blue-600 dark:text-blue-400',
-    done: 'text-green-600 dark:text-green-400',
-    error: 'text-red-600 dark:text-red-400',
-    aborted: 'text-yellow-600 dark:text-yellow-400',
   }[status];
 
   return (
@@ -249,11 +241,7 @@ export default function Page() {
             NRK URL
           </label>
           <div
-            className={`relative w-full border-2 border-dashed rounded-xl transition-colors ${
-              isDragOver 
-                ? 'border-blue-400 bg-blue-50 dark:bg-blue-900/20' 
-                : 'border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500'
-            }`}
+            className={`drop-wrap ${isDragOver ? 'drop-wrap--drag' : ''}`}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
@@ -261,7 +249,7 @@ export default function Page() {
             <input
               id="url-input"
               type="text"
-              className="input"
+              className="input-plain"
               placeholder="https://tv.nrk.no/serie/... eller dra og slipp URL her"
               value={url}
               onChange={(e) => setUrl(cleanUrl(e.target.value))}
@@ -314,13 +302,18 @@ export default function Page() {
           </div>
         ) : (
           <div className="pt-2">
-            <div className="flex items-center gap-2">
-              <p className={`font-medium ${statusColor}`}>
-                Status: {statusText}
-              </p>
-            </div>
+            <span className={`badge ${
+              status === 'idle'    ? 'badge-idle' :
+              status === 'working' ? 'badge-working' :
+              status === 'done'    ? 'badge-done' :
+              status === 'error'   ? 'badge-error' : 'badge-aborted'
+            }`}>
+              {isWorking && <span className="animate-spin rounded-full h-4 w-4 border-2 border-current border-t-transparent" />}
+              Status: {statusText}
+            </span>
+
             {errorMsg && (
-              <p className="text-sm text-red-600 dark:text-red-400 mt-1">
+              <p className="text-sm text-red-600 dark:text-red-400 mt-2">
                 {errorMsg}
               </p>
             )}
@@ -328,8 +321,8 @@ export default function Page() {
         )}
 
         {/* Info section */}
-        <div className="border-t border-gray-200 dark:border-gray-700 pt-6 space-y-3">
-          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4">
+        <div className="section-divider space-y-3">
+          <div className="info-card info-blue">
             <h3 className="font-semibold text-blue-900 dark:text-blue-100 mb-2">Støttede domener</h3>
             <ul className="text-sm text-blue-800 dark:text-blue-200 space-y-1">
               <li>• tv.nrk.no</li>
@@ -339,7 +332,7 @@ export default function Page() {
             </ul>
           </div>
 
-          <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-xl p-4">
+          <div className="info-card info-yellow">
             <h3 className="font-semibold text-yellow-900 dark:text-yellow-100 mb-2">Viktig informasjon</h3>
             <p className="text-sm text-yellow-800 dark:text-yellow-200">
               Du må ha rettigheter til å laste ned innholdet. Dette verktøyet er kun for personlig bruk 

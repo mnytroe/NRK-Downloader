@@ -30,12 +30,12 @@
 
   /* Knapper */
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl font-semibold px-4 py-2 transition
+    @apply inline-flex items-center justify-center gap-2 h-11 rounded-xl font-semibold px-4 transition
            focus-visible:ring-2 focus-visible:ring-brand-500/70 disabled:opacity-60 disabled:pointer-events-none;
   }
-  .btn-primary { @apply btn bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700; }
+  .btn-primary { @apply btn bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700 text-base; }
   .btn-ghost   { @apply btn bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-900 dark:text-gray-100; }
-  .btn-outline { @apply btn border border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700; }
+  .btn-outline { @apply btn border border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700 text-base; }
 
   /* Form */
   .input {
@@ -46,6 +46,23 @@
   }
   .field { @apply space-y-2; }
   .label { @apply text-sm font-medium text-gray-700 dark:text-gray-200; }
+
+  /* Drop zone */
+  .drop-wrap { 
+    @apply relative w-full rounded-xl transition ring-1 ring-inset ring-gray-300 dark:ring-gray-600 
+           hover:ring-gray-400 dark:hover:ring-gray-500 bg-transparent; 
+  }
+  .drop-wrap:has(input:focus-visible) { 
+    @apply ring-2 ring-brand-500/70; 
+  }  /* focus-within effekt */
+  
+  .drop-wrap--drag { 
+    @apply ring-2 ring-blue-400 dark:ring-blue-400/70 bg-blue-50/60 dark:bg-blue-900/25; 
+  }
+  
+  .input-plain { 
+    @apply input border-0 ring-0 shadow-none bg-transparent focus:ring-0 focus:outline-none h-12; 
+  } /* ens høyde */
 
   /* Icon button */
   .icon-btn {
@@ -60,6 +77,32 @@
   .toolbar {
     @apply flex items-center justify-between gap-3 rounded-xl bg-white/70 dark:bg-gray-800/70
            border border-gray-200 dark:border-gray-700 backdrop-blur p-2;
+  }
+
+  /* Delestreker og spacing */
+  .section-divider { 
+    @apply border-t border-gray-200 dark:border-white/10 pt-6 mt-4; 
+  }
+
+  /* Badge styling */
+  .badge {
+    @apply inline-flex items-center gap-2 rounded-full px-3 h-8 text-sm font-medium;
+  }
+  .badge-idle    { @apply text-gray-600 dark:text-gray-300 bg-gray-100/60 dark:bg-white/5; }
+  .badge-working { @apply text-blue-700 dark:text-blue-300 bg-blue-100/70 dark:bg-blue-900/30; }
+  .badge-done    { @apply text-green-700 dark:text-green-300 bg-green-100/70 dark:bg-green-900/30; }
+  .badge-error   { @apply text-red-700 dark:text-red-300 bg-red-100/70 dark:bg-red-900/30; }
+  .badge-aborted { @apply text-yellow-700 dark:text-yellow-300 bg-yellow-100/70 dark:bg-yellow-900/30; }
+
+  /* Info cards */
+  .info-card {
+    @apply rounded-xl p-4 border;
+  }
+  .info-blue {
+    @apply bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800;
+  }
+  .info-yellow {
+    @apply bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800;
   }
 
   /* Små animasjoner */
