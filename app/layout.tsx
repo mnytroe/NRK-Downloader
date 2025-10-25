@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'NRK Nedlaster',
+  title: 'NRK-Nedlaster',
   description: 'Last ned videoer fra NRK med yt-dlp og ffmpeg',
 };
 

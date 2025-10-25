@@ -252,7 +252,7 @@ export default function Page() {
       <section className="panel panel-hover fade-in">
         <header className="flex items-start justify-between">
           <div>
-            <h1 className="title">NRK-nedlaster</h1>
+            <h1 className="title">NRK-Nedlaster</h1>
             <p className="muted">Lim inn NRK-URL, velg kvalitet og last ned.</p>
           </div>
 
