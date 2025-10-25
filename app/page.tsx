@@ -276,11 +276,11 @@ export default function Page() {
         </div>
 
         <div className="flex items-center gap-3">
-          <button
-            className="btn-primary flex-1"
-            onClick={onDownload}
-            disabled={isWorking}
-          >
+                <button
+                  className="btn-primary w-full md:w-auto"
+                  onClick={onDownload}
+                  disabled={isWorking}
+                >
             {isWorking ? 'Laster ned...' : 'Last ned'}
           </button>
           <button

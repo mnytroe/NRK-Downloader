@@ -30,12 +30,14 @@
 
   /* Knapper */
   .btn {
-    @apply inline-flex items-center justify-center gap-2 h-11 rounded-xl font-semibold px-4 transition
+    @apply inline-flex items-center justify-center gap-2 rounded-xl font-semibold transition
            focus-visible:ring-2 focus-visible:ring-brand-500/70 disabled:opacity-60 disabled:pointer-events-none;
   }
-  .btn-primary { @apply btn bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700 text-base; }
+  /* Buttons: comfortable on desktop, compact on mobile */
+  .btn        { @apply rounded-xl h-10 px-4 text-sm md:h-11 md:px-5 md:text-base; }
+  .btn-primary{ @apply btn bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700; }   /* inherits sizing from .btn */
   .btn-ghost   { @apply btn bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-900 dark:text-gray-100; }
-  .btn-outline { @apply btn border border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700 text-base; }
+  .btn-outline { @apply btn border border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700; }
 
   /* Form */
   .input {
@@ -48,16 +50,20 @@
   .label { @apply text-sm font-medium text-gray-700 dark:text-gray-200; }
 
   /* Drop zone */
-  .drop-wrap { 
-    @apply relative w-full rounded-xl transition ring-1 ring-inset ring-gray-300 dark:ring-gray-600 
-           hover:ring-gray-400 dark:hover:ring-gray-500 bg-transparent; 
+  /* Input wrapper: clearer ring in dark mode */
+  .drop-wrap {
+    @apply relative w-full rounded-xl transition
+           ring-2 ring-inset ring-gray-300 dark:ring-white/70
+           hover:ring-gray-400 dark:hover:ring-white/80
+           bg-transparent;
   }
-  .drop-wrap:has(input:focus-visible) { 
-    @apply ring-2 ring-brand-500/70; 
-  }  /* focus-within effekt */
+  .drop-wrap:has(input:focus-visible) {
+    @apply ring-2 ring-brand-500/80;
+  }
   
-  .drop-wrap--drag { 
-    @apply ring-2 ring-blue-400 dark:ring-blue-400/70 bg-blue-50/60 dark:bg-blue-900/25; 
+  .drop-wrap--drag {
+    @apply ring-2 ring-blue-500 dark:ring-blue-400/80
+           bg-blue-50/60 dark:bg-blue-900/25;
   }
   
   .input-plain { 
