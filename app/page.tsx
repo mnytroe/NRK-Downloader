@@ -252,8 +252,10 @@ export default function Page() {
       <section className="panel panel-hover fade-in">
         <header className="flex items-start justify-between">
           <div>
-            <h1 className="title">NRK-Nedlaster</h1>
-            <p className="muted">Lim inn NRK-URL, velg kvalitet og last ned.</p>
+            <h1 className="title mb-1">
+              NRK-Nedlaster
+            </h1>
+            <p className="muted text-sm">Lim inn NRK-URL, velg kvalitet og last ned.</p>
           </div>
 
           {/* Tema-knapp øverst til høyre */}
@@ -274,9 +276,6 @@ export default function Page() {
         </header>
 
         <div className="field">
-          <label className="label" htmlFor="url-input">
-            NRK URL
-          </label>
           <div
             className={`drop-wrap ${isDragOver ? 'drop-wrap--drag' : ''} ${isDarkMode ? 'dark-mode-dashed' : ''}`}
             role="button"
@@ -299,16 +298,13 @@ export default function Page() {
               disabled={isWorking}
             />
             {isDragOver && (
-              <div className="absolute inset-0 flex items-center justify-center bg-blue-50 dark:bg-blue-900/20 bg-opacity-90 rounded-xl">
+              <div className="absolute inset-0 flex items-center justify-center bg-blue-50 dark:bg-blue-900/20 bg-opacity-90 rounded-lg">
                 <div className="text-blue-600 dark:text-blue-400 font-medium">
                   📎 Slip NRK URL her
                 </div>
               </div>
             )}
           </div>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-            💡 Tips: Du kan også dra og slippe URL-er fra nettleseren eller lime inn med Ctrl+V
-          </p>
           {url && url !== cleanUrl(url) && (
             <div className="mt-2 p-2 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded text-xs text-gray-800 dark:text-gray-200">
               <strong>Ryddet URL:</strong> {cleanUrl(url)}
@@ -335,21 +331,20 @@ export default function Page() {
 
         {/* Loading indicator OR Status display */}
         {isWorking ? (
-          <div className="text-center py-4">
+          <div className="text-center py-2">
             <div className="inline-flex items-center space-x-2">
               <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 dark:border-blue-400"></div>
               <span className="text-gray-600 dark:text-gray-300">Laster ned...</span>
             </div>
           </div>
         ) : (
-          <div className="pt-2">
+          <div className="pt-1">
             <span className={`badge ${
               status === 'idle'    ? 'badge-idle' :
-              status === 'working' ? 'badge-working' :
               status === 'done'    ? 'badge-done' :
               status === 'error'   ? 'badge-error' : 'badge-aborted'
             }`}>
-              {isWorking && <span className="animate-spin rounded-full h-4 w-4 border-2 border-current border-t-transparent" />}
+              {status === 'error' && <span className="animate-spin rounded-full h-4 w-4 border-2 border-current border-t-transparent" />}
               Status: {statusText}
             </span>
 
@@ -362,20 +357,10 @@ export default function Page() {
         )}
 
         {/* Info section */}
-        <div className="section-divider space-y-3">
-          <div className="info-card info-blue">
-            <h3 className="font-semibold text-blue-900 dark:text-blue-100 mb-2">Støttede domener</h3>
-            <ul className="text-sm text-blue-800 dark:text-blue-200 space-y-1">
-              <li>• tv.nrk.no</li>
-              <li>• www.nrk.no</li>
-              <li>• nrk.no</li>
-              <li>• radio.nrk.no</li>
-            </ul>
-          </div>
-
+        <div className="section-divider space-y-2 mt-3">
           <div className="info-card info-yellow">
-            <h3 className="font-semibold text-yellow-900 dark:text-yellow-100 mb-2">Viktig informasjon</h3>
-            <p className="text-sm text-yellow-800 dark:text-yellow-200">
+            <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">Viktig informasjon</h3>
+            <p className="text-sm text-gray-700 dark:text-gray-300">
               Du må ha rettigheter til å laste ned innholdet. Dette verktøyet er kun for personlig bruk 
               av innhold du har lov til å laste ned i henhold til NRKs retningslinjer.
             </p>
