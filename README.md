@@ -232,8 +232,15 @@ Hvis MP4 ikke er mulig, fall tilbake til original container med korrekt Content-
 - Øk `maxDuration` i `app/api/download/route.ts`
 - For Vercel: vurder annen hosting-løsning
 
-## ✨ Nye funksjoner (v1.1.0)
+## ✨ Nye funksjoner
 
+### v1.2.0 (Aktuell)
+- ✅ **Klassisk minimalistisk design** - Rent, enkelt UI uten unødvendige effekter
+- ✅ **Optimalisert layout** - Ingen scrolling nødvendig, alt synlig på skjermen
+- ✅ **Forbedret dark mode** - Mørkere bakgrunn for bedre kontrast
+- ✅ **Fjernet "NRK URL"-label** - Mer kompakt design
+
+### v1.1.0
 - ✅ **Strukturert logging og monitoring** - Bedre feilsøking og overvåking
 - ✅ **Fremdriftsindikator** - Viser prosent, nedlastede/totale bytes og gjenstående tid
 - ✅ **Drag & Drop** - Dra og slipp NRK URL-er direkte fra nettleseren
