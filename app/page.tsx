@@ -4,6 +4,22 @@ import React, { useRef, useState, useCallback, useEffect } from 'react';
 
 type Status = 'idle' | 'working' | 'done' | 'error' | 'aborted';
 
+interface VideoFormat {
+  format_id: string;
+  height: number;
+  width: number;
+  quality: string;
+  filesize?: number;
+}
+
+interface VideoMetadata {
+  title: string;
+  description: string;
+  duration?: number;
+  thumbnail?: string;
+  formats: VideoFormat[];
+  uploader?: string;
+}
 
 export default function Page() {
   const [url, setUrl] = useState('');
@@ -11,6 +27,9 @@ export default function Page() {
   const [errorMsg, setErrorMsg] = useState<string>('');
   const [isDragOver, setIsDragOver] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(true);
+  const [metadata, setMetadata] = useState<VideoMetadata | null>(null);
+  const [selectedFormat, setSelectedFormat] = useState<string>('');
+  const [isInspecting, setIsInspecting] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
   const isWorking = status === 'working';
@@ -215,6 +234,55 @@ export default function Page() {
     }
   }, [isDarkMode]);
 
+  // Format duration from seconds to HH:MM:SS or MM:SS
+  const formatDuration = useCallback((seconds: number): string => {
+    const totalSeconds = Math.floor(seconds);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const secs = totalSeconds % 60;
+    
+    if (hours > 0) {
+      return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
+    return `${minutes}:${secs.toString().padStart(2, '0')}`;
+  }, []);
+
+  // Inspect video when URL changes
+  useEffect(() => {
+    const cleanedUrl = cleanUrl(url);
+    if (!cleanedUrl.trim() || !cleanedUrl.includes('nrk.no')) {
+      setMetadata(null);
+      setSelectedFormat('');
+      return;
+    }
+
+    const inspectVideo = async () => {
+      setIsInspecting(true);
+      try {
+        const res = await fetch(`/api/inspect?url=${encodeURIComponent(cleanedUrl)}`);
+        if (res.ok) {
+          const data = await res.json();
+          setMetadata(data);
+          // Auto-select best quality if available
+          if (data.formats && data.formats.length > 0) {
+            setSelectedFormat(data.formats[0].format_id);
+          }
+        } else {
+          setMetadata(null);
+        }
+      } catch (err) {
+        console.error('Failed to inspect video:', err);
+        setMetadata(null);
+      } finally {
+        setIsInspecting(false);
+      }
+    };
+
+    // Debounce inspection
+    const timer = setTimeout(inspectVideo, 500);
+    return () => clearTimeout(timer);
+  }, [url]);
+
   async function onDownload() {
     const cleanedUrl = cleanUrl(url);
     
@@ -246,7 +314,10 @@ export default function Page() {
       const res = await fetch('/api/download', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: cleanedUrl }),
+        body: JSON.stringify({ 
+          url: cleanedUrl,
+          format: selectedFormat || undefined, // Send selected format if available
+        }),
         signal: abortRef.current.signal,
       });
 
@@ -383,11 +454,79 @@ export default function Page() {
           )}
         </div>
 
+        {/* Video metadata preview */}
+        {isInspecting && (
+          <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+            <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400 text-sm">
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 dark:border-blue-400"></div>
+              <span>Henter videoinformasjon...</span>
+            </div>
+          </div>
+        )}
+
+        {metadata && !isInspecting && (
+          <div className="space-y-3 p-4 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg">
+            {/* Thumbnail and title */}
+            <div className="flex gap-4">
+              {metadata.thumbnail && (
+                <img 
+                  src={metadata.thumbnail} 
+                  alt={metadata.title}
+                  className="w-32 h-20 object-cover rounded border border-gray-300 dark:border-gray-600"
+                />
+              )}
+              <div className="flex-1 min-w-0">
+                <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-1 line-clamp-2">
+                  {metadata.title}
+                </h3>
+                {metadata.uploader && (
+                  <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">
+                    {metadata.uploader}
+                  </p>
+                )}
+                {metadata.duration && (
+                  <p className="text-xs text-gray-500 dark:text-gray-500">
+                    Varighet: {formatDuration(metadata.duration)}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Description */}
+            {metadata.description && (
+              <div className="text-sm text-gray-700 dark:text-gray-300 line-clamp-3">
+                {metadata.description}
+              </div>
+            )}
+
+            {/* Format selection */}
+            {metadata.formats && metadata.formats.length > 0 && (
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Velg kvalitet:
+                </label>
+                <select
+                  value={selectedFormat}
+                  onChange={(e) => setSelectedFormat(e.target.value)}
+                  className="input w-full text-sm"
+                  disabled={isWorking}
+                >
+                  {metadata.formats.map((format) => (
+                    <option key={format.format_id} value={format.format_id}>
+                      {format.quality} {format.filesize ? `(${(format.filesize / 1024 / 1024).toFixed(1)} MB)` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="flex items-center gap-3">
                 <button
                   className="btn-primary w-full md:w-auto"
                   onClick={onDownload}
-                  disabled={isWorking}
+                  disabled={isWorking || isInspecting}
                 >
             {isWorking ? 'Laster ned...' : 'Last ned'}
           </button>

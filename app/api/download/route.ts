@@ -183,32 +183,18 @@ function getVideoTitle(url: string): string {
 
 /**
  * Primary strategy: Stream yt-dlp stdout directly to response
+ * Abort-safe implementation with proper cleanup
  */
-async function streamFromStdout(url: string, safeName: string, req: NextRequest): Promise<NextResponse> {
+async function streamFromStdout(url: string, safeName: string, req: NextRequest, format?: string): Promise<NextResponse> {
   const args = [
     '--no-playlist',
-    '-f', 'bv*+ba/b', // More flexible format selector for HLS streams
+    '-f', format || 'bv*+ba/best', // Use selected format or best available
     '--merge-output-format', 'mp4',
     '-o', '-', // Write to stdout
     url,
   ];
 
   const child = spawn('yt-dlp', args, { stdio: ['ignore', 'pipe', 'pipe'] });
-
-  // Kill process on abort
-  req.signal.addEventListener('abort', () => {
-    try {
-      child.kill('SIGTERM');
-      // Force kill after 5 seconds if process doesn't exit gracefully
-      setTimeout(() => {
-        if (!child.killed) {
-          child.kill('SIGKILL');
-        }
-      }, 5000);
-    } catch (err) {
-      console.error('Failed to kill yt-dlp process:', err);
-    }
-  });
 
   // Capture stderr for debugging
   let stderrBuf = '';
@@ -217,17 +203,98 @@ async function streamFromStdout(url: string, safeName: string, req: NextRequest)
     stderrBuf += chunk;
   });
 
-  // Wait for first data chunk or error to ensure yt-dlp is working
+  // Abort handler - kill process when client aborts
+  const onAbort = () => {
+    try {
+      child.kill('SIGTERM');
+      setTimeout(() => {
+        if (!child.killed) {
+          child.kill('SIGKILL');
+        }
+      }, 3000);
+    } catch (err) {
+      logger.warn('Failed to kill yt-dlp process on abort', { error: err });
+    }
+  };
+
+  req.signal.addEventListener('abort', onAbort, { once: true });
+
+  // Create ReadableStream with proper cleanup
+  const stream = new ReadableStream({
+    start(controller) {
+      child.stdout.on('data', (data) => {
+        try {
+          controller.enqueue(data);
+        } catch (err) {
+          logger.warn('Failed to enqueue data', { error: err });
+        }
+      });
+
+      child.on('close', (code, signal) => {
+        try {
+          if (code !== 0 && code !== null) {
+            logger.ytDlpError(url, stderrBuf, code);
+          }
+          if (signal) {
+            logger.info(`yt-dlp killed with signal ${signal}`, { url });
+          }
+          controller.close();
+        } catch (err) {
+          logger.warn('Error closing stream controller', { error: err });
+        }
+      });
+
+      child.on('error', (err) => {
+        try {
+          logger.error('yt-dlp process error', err, { url });
+          controller.error(err);
+        } catch (e) {
+          logger.warn('Error in stream error handler', { error: e });
+        }
+      });
+    },
+    cancel() {
+      // Client cancelled the stream - abort the process
+      onAbort();
+    },
+  });
+
+  // Wait for first data chunk to ensure yt-dlp is working
   return new Promise<NextResponse>((resolve, reject) => {
     let hasStarted = false;
     let hasErrored = false;
 
+    // Timeout if no data arrives
+    const timeout = setTimeout(() => {
+      if (!hasStarted && !hasErrored) {
+        hasErrored = true;
+        onAbort();
+        reject(new Error('Download timeout: yt-dlp did not start sending data'));
+      }
+    }, 30000); // 30 second timeout
+
+    // Wait for first data chunk
+    child.stdout.once('data', () => {
+      if (hasErrored) return;
+      hasStarted = true;
+      clearTimeout(timeout);
+
+      const headers = new Headers();
+      headers.set('Content-Type', getMimeType(safeName));
+      headers.set('Content-Disposition', getContentDisposition(safeName));
+      headers.set('Cache-Control', 'no-store');
+      headers.set('X-Content-Type-Options', 'nosniff');
+
+      resolve(new NextResponse(stream, { status: 200, headers }));
+    });
+
     // Check for early exit/error (before stream starts)
-    const exitHandler = (code: number | null, signal: NodeJS.Signals | null) => {
-      if (hasErrored) return; // Already handled
+    child.on('exit', (code, signal) => {
+      if (hasErrored) return;
       
       if (code !== 0 && code !== null && !hasStarted) {
         hasErrored = true;
+        clearTimeout(timeout);
         logger.ytDlpError(url, stderrBuf, code);
         
         // Extract error message from stderr
@@ -245,50 +312,15 @@ async function streamFromStdout(url: string, safeName: string, req: NextRequest)
         
         reject(new Error(errorMsg));
       }
-      
-      // Always log exit for debugging (even if successful)
-      if (code !== 0 && code !== null) {
-        logger.ytDlpError(url, stderrBuf, code);
-      }
-      if (signal) {
-        logger.info(`yt-dlp killed with signal ${signal}`, { url });
-      }
-    };
-
-    child.on('exit', exitHandler);
+    });
 
     // Check for process errors
     child.on('error', (err) => {
       if (hasErrored) return;
       hasErrored = true;
+      clearTimeout(timeout);
       logger.error('yt-dlp process error', err, { url });
       reject(new Error(`Failed to start download: ${err.message}`));
-    });
-
-    // Wait for first data chunk to ensure stream is working
-    const timeout = setTimeout(() => {
-      if (!hasStarted && !hasErrored) {
-        hasErrored = true;
-        child.kill('SIGTERM');
-        reject(new Error('Download timeout: yt-dlp did not start sending data'));
-      }
-    }, 30000); // 30 second timeout
-
-    child.stdout.once('data', () => {
-      if (hasErrored) return;
-      hasStarted = true;
-      clearTimeout(timeout);
-      
-      // Now we know the stream is working, create the response
-      const webStream = Readable.toWeb(child.stdout) as ReadableStream;
-
-      const headers = new Headers();
-      headers.set('Content-Type', getMimeType(safeName));
-      headers.set('Content-Disposition', getContentDisposition(safeName));
-      headers.set('Cache-Control', 'no-store');
-      headers.set('X-Content-Type-Options', 'nosniff');
-
-      resolve(new NextResponse(webStream, { status: 200, headers }));
     });
   });
 }
@@ -296,14 +328,14 @@ async function streamFromStdout(url: string, safeName: string, req: NextRequest)
 /**
  * Fallback strategy: Download to temp file, then stream
  */
-async function streamFromTempFile(url: string, safeName: string, req: NextRequest): Promise<NextResponse> {
+async function streamFromTempFile(url: string, safeName: string, req: NextRequest, format?: string): Promise<NextResponse> {
   const baseTmpDir = env.TMP_DIR || tmpdir();
   const tmpDir = mkdtempSync(join(baseTmpDir, 'nrk-'));
   const outTemplate = join(tmpDir, 'out.%(ext)s');
 
   const args = [
     '--no-playlist',
-    '-f', 'bv*+ba/best',
+    '-f', format || 'bv*+ba/best', // Use selected format or best available
     '--merge-output-format', 'mp4',
     '-o', outTemplate,
     url,
@@ -427,9 +459,11 @@ export async function POST(req: NextRequest) {
 
   // Parse and validate request
   let url: string;
+  let format: string | undefined;
   try {
     const body = await req.json();
     url = body.url;
+    format = body.format;
     
     // Debug: Log the raw URL from request body
     logger.debug('Raw URL from request body', { url, requestId });
@@ -507,14 +541,14 @@ export async function POST(req: NextRequest) {
   logger.debug('Attempting direct stream from yt-dlp');
   
   try {
-    const response = await streamFromStdout(url, safeName, req);
+    const response = await streamFromStdout(url, safeName, req, format);
     const duration = Date.now() - startTime;
     logger.downloadComplete(url, safeName, duration);
     return response;
   } catch (err) {
     logger.warn('Direct streaming failed, falling back to temp file method', { error: (err as Error).message });
     try {
-      const response = await streamFromTempFile(url, safeName, req);
+      const response = await streamFromTempFile(url, safeName, req, format);
       const duration = Date.now() - startTime;
       logger.downloadComplete(url, safeName, duration);
       return response;
