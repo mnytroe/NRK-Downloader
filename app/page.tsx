@@ -95,7 +95,15 @@ export default function Page() {
     }
     
     // Ensure it starts with http/https
-    if (!cleaned.startsWith('http://') && !cleaned.startsWith('https://')) {
+    // Check if it already starts with http or https (even if incomplete)
+    // Also check for partial typing like "h", "ht", "htt", "http", "http:", "http:/", "https", "https:", "https:/"
+    // This prevents adding "https://" when user is typing or deleting parts of "http://" or "https://"
+    const lowerCleaned = cleaned.toLowerCase();
+    
+    // If it starts with "h", assume user is typing/deleting a protocol (http/https)
+    // This prevents adding "https://" when user has "htt", "http", "https", etc.
+    if (!lowerCleaned.startsWith('h')) {
+      // Only add https:// if it doesn't start with "h" (any prefix of http/https)
       cleaned = 'https://' + cleaned;
     }
     
