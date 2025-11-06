@@ -121,26 +121,80 @@ async function streamFromStdout(url: string, safeName: string, req: NextRequest)
     stderrBuf += chunk;
   });
 
-  // Log errors on process exit
-  child.on('exit', (code, signal) => {
-    if (code !== 0 && code !== null) {
-      logger.ytDlpError(url, stderrBuf, code);
-    }
-    if (signal) {
-      logger.info(`yt-dlp killed with signal ${signal}`, { url });
-    }
+  // Wait for first data chunk or error to ensure yt-dlp is working
+  return new Promise<NextResponse>((resolve, reject) => {
+    let hasStarted = false;
+    let hasErrored = false;
+
+    // Check for early exit/error (before stream starts)
+    const exitHandler = (code: number | null, signal: NodeJS.Signals | null) => {
+      if (hasErrored) return; // Already handled
+      
+      if (code !== 0 && code !== null && !hasStarted) {
+        hasErrored = true;
+        logger.ytDlpError(url, stderrBuf, code);
+        
+        // Extract error message from stderr
+        let errorMsg = 'Download failed';
+        if (stderrBuf.includes('ERROR')) {
+          const errorMatch = stderrBuf.match(/ERROR:\s*(.+)/);
+          if (errorMatch) {
+            errorMsg = errorMatch[1].trim();
+          }
+        } else if (stderrBuf.includes('Unsupported URL')) {
+          errorMsg = 'Unsupported URL or video not available';
+        } else if (stderrBuf.includes('Private video')) {
+          errorMsg = 'Video is private or not available';
+        }
+        
+        reject(new Error(errorMsg));
+      }
+      
+      // Always log exit for debugging (even if successful)
+      if (code !== 0 && code !== null) {
+        logger.ytDlpError(url, stderrBuf, code);
+      }
+      if (signal) {
+        logger.info(`yt-dlp killed with signal ${signal}`, { url });
+      }
+    };
+
+    child.on('exit', exitHandler);
+
+    // Check for process errors
+    child.on('error', (err) => {
+      if (hasErrored) return;
+      hasErrored = true;
+      logger.error('yt-dlp process error', err, { url });
+      reject(new Error(`Failed to start download: ${err.message}`));
+    });
+
+    // Wait for first data chunk to ensure stream is working
+    const timeout = setTimeout(() => {
+      if (!hasStarted && !hasErrored) {
+        hasErrored = true;
+        child.kill('SIGTERM');
+        reject(new Error('Download timeout: yt-dlp did not start sending data'));
+      }
+    }, 30000); // 30 second timeout
+
+    child.stdout.once('data', () => {
+      if (hasErrored) return;
+      hasStarted = true;
+      clearTimeout(timeout);
+      
+      // Now we know the stream is working, create the response
+      const webStream = Readable.toWeb(child.stdout) as ReadableStream;
+
+      const headers = new Headers();
+      headers.set('Content-Type', 'video/mp4');
+      headers.set('Content-Disposition', `attachment; filename="${safeName}"`);
+      headers.set('Cache-Control', 'no-store');
+      headers.set('X-Content-Type-Options', 'nosniff');
+
+      resolve(new NextResponse(webStream, { status: 200, headers }));
+    });
   });
-
-  // Convert Node Readable to Web ReadableStream
-  const webStream = Readable.toWeb(child.stdout) as ReadableStream;
-
-  const headers = new Headers();
-  headers.set('Content-Type', 'video/mp4');
-  headers.set('Content-Disposition', `attachment; filename="${safeName}"`);
-  headers.set('Cache-Control', 'no-store');
-  headers.set('X-Content-Type-Options', 'nosniff');
-
-  return new NextResponse(webStream, { status: 200, headers });
 }
 
 /**

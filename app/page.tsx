@@ -197,6 +197,12 @@ export default function Page() {
 
       // Download blob and trigger download
       const blob = await res.blob();
+      
+      // Check if blob is empty (0 bytes) - indicates download failed
+      if (blob.size === 0) {
+        throw new Error('Download failed: received empty file. Video may not be available or download failed.');
+      }
+      
       const href = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = href;
@@ -344,7 +350,6 @@ export default function Page() {
               status === 'done'    ? 'badge-done' :
               status === 'error'   ? 'badge-error' : 'badge-aborted'
             }`}>
-              {status === 'error' && <span className="animate-spin rounded-full h-4 w-4 border-2 border-current border-t-transparent" />}
               Status: {statusText}
             </span>
 
