@@ -10,6 +10,53 @@ import { logger, generateRequestId } from '@/lib/logger';
 import { env } from '@/lib/env';
 import { isAllowedUrl, normalizeHost } from '@/lib/host';
 
+/**
+ * Generate Content-Disposition header with proper encoding for Norwegian characters (æøå)
+ * Uses RFC 5987 encoding (filename*) for UTF-8 support with ASCII fallback
+ */
+function getContentDisposition(filename: string): string {
+  // ASCII-safe version (fallback for older browsers)
+  const asciiName = filename
+    .replace(/[æøåÆØÅ]/g, (char) => {
+      const map: Record<string, string> = {
+        'æ': 'ae', 'ø': 'o', 'å': 'aa',
+        'Æ': 'Ae', 'Ø': 'O', 'Å': 'Aa'
+      };
+      return map[char] || char;
+    })
+    .replace(/[^\x20-\x7E]/g, '_'); // Replace non-ASCII with underscore
+  
+  // RFC 5987 encoding for UTF-8 (filename*)
+  const utf8Encoded = encodeURIComponent(filename)
+    .replace(/'/g, "%27")
+    .replace(/\(/g, "%28")
+    .replace(/\)/g, "%29");
+  
+  // Use both filename (ASCII) and filename* (UTF-8) for maximum compatibility
+  return `attachment; filename="${asciiName}"; filename*=UTF-8''${utf8Encoded}`;
+}
+
+/**
+ * Get MIME type based on file extension
+ * Returns safe default (video/mp4) if extension is unknown
+ */
+function getMimeType(filename: string): string {
+  const ext = filename.toLowerCase().split('.').pop() || '';
+  const mimeTypes: Record<string, string> = {
+    'mp4': 'video/mp4',
+    'webm': 'video/webm',
+    'mkv': 'video/x-matroska',
+    'avi': 'video/x-msvideo',
+    'mov': 'video/quicktime',
+    'flv': 'video/x-flv',
+    'wmv': 'video/x-ms-wmv',
+    'm4v': 'video/x-m4v',
+    '3gp': 'video/3gpp',
+  };
+  
+  return mimeTypes[ext] || 'video/mp4'; // Safe default
+}
+
 // Force Node.js runtime (not Edge)
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -236,8 +283,8 @@ async function streamFromStdout(url: string, safeName: string, req: NextRequest)
       const webStream = Readable.toWeb(child.stdout) as ReadableStream;
 
       const headers = new Headers();
-      headers.set('Content-Type', 'video/mp4');
-      headers.set('Content-Disposition', `attachment; filename="${safeName}"`);
+      headers.set('Content-Type', getMimeType(safeName));
+      headers.set('Content-Disposition', getContentDisposition(safeName));
       headers.set('Cache-Control', 'no-store');
       headers.set('X-Content-Type-Options', 'nosniff');
 
@@ -323,18 +370,15 @@ async function streamFromTempFile(url: string, safeName: string, req: NextReques
           }
         });
 
-        // Determine Content-Type
-        const ext = downloadedFile.split('.').pop()?.toLowerCase();
-        const contentType = ext === 'mp4' ? 'video/mp4' :
-                           ext === 'mkv' ? 'video/x-matroska' :
-                           ext === 'webm' ? 'video/webm' :
-                           'video/mp4';
+        // Determine Content-Type based on actual file extension
+        const actualFilename = downloadedFile;
+        const contentType = getMimeType(actualFilename);
 
         const webStream = Readable.toWeb(stream) as ReadableStream;
 
         const headers = new Headers();
         headers.set('Content-Type', contentType);
-        headers.set('Content-Disposition', `attachment; filename="${safeName}"`);
+        headers.set('Content-Disposition', getContentDisposition(safeName));
         headers.set('Cache-Control', 'no-store');
         headers.set('X-Content-Type-Options', 'nosniff');
 
