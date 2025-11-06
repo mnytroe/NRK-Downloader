@@ -4,8 +4,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   curl ffmpeg ca-certificates git tini \
   && rm -rf /var/lib/apt/lists/*
 
-# Hent siste yt-dlp som statisk binær (ingen pip/PEP 668)
-RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/download/2024.10.07/yt-dlp \
+# PINN VERSJONEN HER (endre verdien når du vil oppdatere)
+ARG YTDLP_VERSION=2025.10.22
+RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/download/${YTDLP_VERSION}/yt-dlp \
   -o /usr/local/bin/yt-dlp && chmod a+rx /usr/local/bin/yt-dlp
 
 WORKDIR /app
