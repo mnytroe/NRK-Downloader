@@ -84,6 +84,8 @@ npm run build
 npm start
 ```
 
+**Merk:** Se `.env.example` for miljøvariabler som må settes (ALLOW_DOMAINS, RATE_LIMIT_PER_MINUTE, etc.)
+
 ## 📁 Prosjektstruktur
 
 ```
@@ -96,8 +98,13 @@ nrk-downloader/
 │   ├── layout.tsx                # Root layout
 │   └── page.tsx                  # Main page (client component)
 ├── lib/
+│   ├── env.ts                   # Environment variable validation (Zod)
 │   ├── filename.ts               # Filename sanitization
-│   └── rateLimit.ts              # Rate limiting
+│   ├── host.ts                   # Host normalization and validation
+│   ├── rateLimit.ts              # Rate limiting (Redis + in-memory)
+│   └── redis.ts                  # Redis client
+├── nginx/
+│   └── example.conf              # Nginx reverse proxy example
 ├── package.json
 ├── tsconfig.json
 ├── next.config.ts
@@ -108,16 +115,19 @@ nrk-downloader/
 ## 🔒 Sikkerhet
 
 ### Domenebegrensning
-Kun følgende NRK-domener er tillatt:
+Tillatte domener konfigureres via `ALLOW_DOMAINS` miljøvariabel (kommaseparert liste).
+Standard domener:
 - `tv.nrk.no`
 - `www.nrk.no`
 - `nrk.no`
 - `radio.nrk.no`
+- `nrkbeta.no`
 
 ### Rate Limiting
-- Maksimalt 5 forespørsler per minutt per IP-adresse
-- In-memory implementation (for MVP)
-- For produksjon: bruk Redis eller lignende distribuert cache
+- Konfigurerbart via `RATE_LIMIT_PER_MINUTE` (standard: 30 per minutt)
+- Redis-støtte for distribuert rate limiting (valgfritt)
+- Automatisk fallback til in-memory hvis Redis ikke er tilgjengelig
+- Sliding window algoritme for nøyaktig rate limiting
 
 ### Filnavn
 - Alle filnavn saniteres for å fjerne farlige tegn
@@ -164,6 +174,22 @@ Bygg og kjør:
 docker build -t nrk-downloader .
 docker run -p 3000:3000 nrk-downloader
 ```
+
+Eller bruk `docker-compose.yml`:
+```bash
+docker compose up -d --build
+```
+
+#### Rask Nginx + TLS (eksempel)
+```bash
+sudo cp nginx/example.conf /etc/nginx/sites-available/your-domain.example.com
+sudo ln -s /etc/nginx/sites-available/your-domain.example.com /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+sudo apt -y install certbot python3-certbot-nginx
+sudo certbot --nginx -d your-domain.example.com --redirect
+```
+
+> Bytt ut `your-domain.example.com` med ditt faktiske domene.
 
 ## 🛠️ Teknisk implementasjon
 
@@ -253,7 +279,7 @@ Hvis MP4 ikke er mulig, fall tilbake til original container med korrekt Content-
 - [ ] Valg av videokvalitet (720p, 1080p, etc.)
 - [ ] Historikk over nedlastede videoer
 - [ ] HEAD-request for å hente metadata før nedlasting
-- [ ] Redis-basert rate limiting for skalerbarhet
+- [x] Redis-basert rate limiting for skalerbarhet ✅
 - [ ] Queue-system for samtidige nedlastinger
 - [ ] Administratorpanel med statistikk
 

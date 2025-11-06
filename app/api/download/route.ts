@@ -5,8 +5,10 @@ import { createReadStream, mkdtempSync, unlinkSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { sanitizeFilename } from '@/lib/filename';
-import { rateLimitOk } from '@/lib/rateLimit';
+import { rateLimitOk, rateLimit } from '@/lib/rateLimit';
 import { logger, generateRequestId } from '@/lib/logger';
+import { env } from '@/lib/env';
+import { isAllowedUrl, normalizeHost } from '@/lib/host';
 
 // Force Node.js runtime (not Edge)
 export const runtime = 'nodejs';
@@ -248,7 +250,8 @@ async function streamFromStdout(url: string, safeName: string, req: NextRequest)
  * Fallback strategy: Download to temp file, then stream
  */
 async function streamFromTempFile(url: string, safeName: string, req: NextRequest): Promise<NextResponse> {
-  const tmpDir = mkdtempSync(join(tmpdir(), 'nrk-'));
+  const baseTmpDir = env.TMP_DIR || tmpdir();
+  const tmpDir = mkdtempSync(join(baseTmpDir, 'nrk-'));
   const outTemplate = join(tmpDir, 'out.%(ext)s');
 
   const args = [
@@ -291,7 +294,7 @@ async function streamFromTempFile(url: string, safeName: string, req: NextReques
     });
 
     child.on('exit', (code) => {
-      if (code !== 0) {
+      if (code !== 0 && code !== null) {
         logger.ytDlpError(url, stderrBuf, code);
         resolve(new NextResponse('Download failed', { status: 500 }));
         return;
@@ -338,7 +341,7 @@ async function streamFromTempFile(url: string, safeName: string, req: NextReques
         logger.debug('Starting stream', { downloadedFile, contentType });
         resolve(new NextResponse(webStream, { headers }));
       } catch (err) {
-        logger.error('Stream error', err as Error, { downloadedFile });
+        logger.error('Stream error', err as Error, { tmpDir });
         resolve(new NextResponse('Failed to stream file', { status: 500 }));
       }
     });
@@ -362,10 +365,20 @@ export async function POST(req: NextRequest) {
   
   logger.info('Download request received', { ip, requestId });
 
-  // Rate limiting
-  if (!rateLimitOk(req)) {
-    logger.rateLimitHit(ip, 5);
-    return new NextResponse('Rate limit exceeded. Try again later.', { status: 429 });
+  // Rate limiting - prøv ny funksjon først, fallback til gammel
+  try {
+    const rl = await rateLimit(req);
+    if (!rl.allowed) {
+      logger.rateLimitHit(ip, rl.limit);
+      return new NextResponse('Rate limit exceeded. Try again later.', { status: 429 });
+    }
+  } catch (error) {
+    // Fallback til gammel rate limiting hvis ny feiler
+    logger.warn('Rate limit check failed, using fallback', { error });
+    if (!rateLimitOk(req)) {
+      logger.rateLimitHit(ip, 5);
+      return new NextResponse('Rate limit exceeded. Try again later.', { status: 429 });
+    }
   }
 
   // Parse and validate request
@@ -404,7 +417,17 @@ export async function POST(req: NextRequest) {
     return new NextResponse('Missing or invalid URL', { status: 400 });
   }
 
-  if (!isAllowedNrk(url)) {
+  // URL validation - prøv ny funksjon først, fallback til gammel
+  let urlValid = false;
+  try {
+    const allow = env.ALLOW_DOMAINS.map((h) => normalizeHost(h));
+    urlValid = isAllowedUrl(url, allow);
+  } catch (error) {
+    logger.warn('New URL validation failed, using fallback', { error });
+    urlValid = isAllowedNrk(url);
+  }
+
+  if (!urlValid) {
     logger.warn('Invalid NRK URL attempted', { url, ip });
     
     // Check for specific error cases

@@ -1,24 +1,17 @@
 /**
- * Simple in-memory rate limiter (MVP)
+ * Rate limiter with Redis support and in-memory fallback
  * 
- * PRODUCTION IMPROVEMENTS NEEDED:
- * - Use Redis or similar distributed store for horizontal scaling
- * - Implement per-route rate limiting (different limits for different endpoints)
- * - Add rate limit headers (X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset)
- * - Consider sliding window vs fixed window algorithms
- * - Add rate limit bypass for authenticated users
- * - Implement distributed rate limiting across multiple server instances
- * 
- * Example Redis implementation:
- * ```typescript
- * const key = `rate_limit:${ip}:${route}`;
- * const current = await redis.incr(key);
- * if (current === 1) await redis.expire(key, WINDOW_SECONDS);
- * return current <= MAX_REQUESTS;
- * ```
+ * Features:
+ * - Redis-based sliding window for distributed rate limiting
+ * - In-memory fallback when Redis is unavailable
+ * - Configurable rate limits via environment variables
+ * - Rate limit headers support
  */
 
+import { NextRequest } from "next/server";
 import { logger } from './logger';
+import { env } from "./env";
+import { getRedis } from "./redis";
 
 interface RateLimitRecord {
   count: number;
@@ -58,6 +51,76 @@ export function rateLimitOk(req: Request): boolean {
   return true;
 }
 
+// ===== NY FUNKSJON (med Redis-støtte) =====
+interface RateLimitResult {
+  allowed: boolean;
+  limit: number;
+  remaining: number;
+  retryAfter?: number;
+}
+
+// Sliding window (Redis) med fallback til in-memory per prosess
+const memoryHits = new Map<string, { count: number; resetAt: number }>();
+
+export async function rateLimit(req: NextRequest): Promise<RateLimitResult> {
+  const limit = env.RATE_LIMIT_PER_MINUTE;
+  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "0.0.0.0";
+  const key = `rl:${ip}`;
+  const now = Date.now();
+  const windowMs = 60_000;
+  const redis = getRedis();
+
+  try {
+    if (redis) {
+      const pipeline = redis.pipeline();
+      pipeline.zadd(key, now, `${now}`);
+      pipeline.zremrangebyscore(key, 0, now - windowMs);
+      pipeline.zcard(key);
+      pipeline.pexpire(key, windowMs);
+      const results = await pipeline.exec();
+      
+      if (results) {
+        const cardResult = results[2];
+        const current = Number((cardResult as any[])?.[1] ?? 0);
+        
+        if (current > limit) {
+          return { 
+            allowed: false, 
+            limit, 
+            remaining: 0, 
+            retryAfter: 60 
+          };
+        }
+        
+        return { 
+          allowed: true, 
+          limit, 
+          remaining: Math.max(0, limit - current) 
+        };
+      }
+    }
+  } catch (e) {
+    logger.warn("[rateLimit] Redis unavailable, falling back to memory", { error: e });
+  }
+
+  // Fallback til in-memory
+  const rec = memoryHits.get(key) ?? { count: 0, resetAt: now + windowMs };
+  if (now > rec.resetAt) { 
+    rec.count = 0; 
+    rec.resetAt = now + windowMs; 
+  }
+  rec.count++; 
+  memoryHits.set(key, rec);
+  const remaining = Math.max(0, limit - rec.count);
+  
+  return { 
+    allowed: rec.count <= limit, 
+    limit, 
+    remaining, 
+    retryAfter: Math.ceil((rec.resetAt - now) / 1000) 
+  };
+}
+
 /**
  * Periodic cleanup of old entries (optional, for memory efficiency)
  */
@@ -67,6 +130,11 @@ if (typeof setInterval !== 'undefined') {
     for (const [ip, rec] of hits.entries()) {
       if (now - rec.ts > WINDOW_MS) {
         hits.delete(ip);
+      }
+    }
+    for (const [key, rec] of memoryHits.entries()) {
+      if (now > rec.resetAt) {
+        memoryHits.delete(key);
       }
     }
   }, WINDOW_MS);

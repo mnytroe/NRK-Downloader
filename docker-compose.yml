@@ -1,15 +1,18 @@
-version: '3.8'
-
 services:
   nrk-downloader:
     build: .
     container_name: nrk-downloader
-    ports:
-      - "3000:3000"
+    restart: unless-stopped
     environment:
       - NODE_ENV=production
-    restart: unless-stopped
-    # Optional: Add volume for logs
-    # volumes:
-    #   - ./logs:/app/logs
-
+      - PORT=3000
+      - ALLOW_DOMAINS=nrk.no,tv.nrk.no,www.nrk.no,radio.nrk.no,nrkbeta.no
+      - RATE_LIMIT_PER_MINUTE=30
+      # - REDIS_URL=redis://default:pass@redis:6379/0
+    ports:
+      - "127.0.0.1:3000:3000"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
