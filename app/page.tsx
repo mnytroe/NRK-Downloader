@@ -281,7 +281,7 @@ export default function Page() {
     } catch (e: any) {
       if (e?.name === 'AbortError') {
         setStatus('aborted');
-        setErrorMsg('Nedlasting avbrutt');
+        setErrorMsg(''); // Status badge viser allerede "Avbrutt"
       } else if (e?.message?.includes('Rate limit')) {
         setStatus('error');
         setErrorMsg('Rate limit: prøv igjen om 60s');
@@ -301,7 +301,7 @@ export default function Page() {
   function onAbort() {
     abortRef.current?.abort();
     setStatus('aborted');
-    setErrorMsg('Nedlasting avbrutt');
+    setErrorMsg(''); // Status badge viser allerede "Avbrutt"
   }
 
   function handleKeyPress(e: React.KeyboardEvent) {
