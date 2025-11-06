@@ -24,19 +24,73 @@ export default function Page() {
     // Remove any whitespace
     let cleaned = url.trim();
     
-    // If URL appears to be duplicated, take only the first complete URL
-    if (cleaned.includes('nrk.no') && cleaned.split('nrk.no').length > 2) {
-      console.log('🔄 Detected duplicated URL, cleaning...');
-      // Find the first complete URL by looking for the pattern
-      const nrkMatch = cleaned.match(/https?:\/\/[^\/]*nrk\.no[^\s]*/);
-      if (nrkMatch) {
-        cleaned = nrkMatch[0];
-        console.log('✅ Found complete URL:', cleaned);
-      } else {
-        // Fallback: split by nrk.no and reconstruct
-        const parts = cleaned.split('nrk.no');
-        cleaned = parts[0] + 'nrk.no' + parts[1];
-        console.log('⚠️ Fallback cleaning:', cleaned);
+    // Check for duplicated URLs (same URL repeated, even without spaces)
+    // Strategy: Find the first complete NRK URL, then check if it's repeated
+    
+    // First, try to find URLs separated by spaces or line breaks
+    const urlPattern = /https?:\/\/[^\s]+/g;
+    const allUrls = cleaned.match(urlPattern);
+    
+    if (allUrls && allUrls.length > 1) {
+      // Multiple URLs found - check if they're duplicates
+      const firstUrl = allUrls[0];
+      const allSame = allUrls.every(url => url === firstUrl);
+      
+      if (allSame && firstUrl.includes('nrk.no')) {
+        // All URLs are the same NRK URL, use only the first one
+        console.log('🔄 Detected duplicated URL (with separators), using first occurrence');
+        cleaned = firstUrl;
+      } else if (firstUrl.includes('nrk.no')) {
+        // Multiple different URLs, but we only want the first NRK URL
+        console.log('🔄 Detected multiple URLs, extracting first NRK URL');
+        cleaned = firstUrl;
+      }
+    } else {
+      // No spaces found - check if URL is duplicated by looking for pattern repetition
+      // Find first NRK URL by looking for the pattern and checking if it repeats
+      // Try to match URL until we find another https:// or end of string
+      const httpsIndex = cleaned.indexOf('https://');
+      if (httpsIndex !== -1) {
+        // Find where the URL likely ends by looking for next https://
+        const nextHttpsIndex = cleaned.indexOf('https://', httpsIndex + 1);
+        let firstUrl: string;
+        
+        if (nextHttpsIndex !== -1) {
+          // There's another https://, so the first URL is everything up to that point
+          firstUrl = cleaned.substring(httpsIndex, nextHttpsIndex);
+        } else {
+          // No next https://, so try to extract the URL using a pattern
+          const nrkMatch = cleaned.match(/https?:\/\/[^\/]*nrk\.no[^\s]*/);
+          firstUrl = nrkMatch ? nrkMatch[0] : cleaned;
+        }
+        
+        // Check if the same URL appears again immediately after
+        const restOfString = cleaned.substring(firstUrl.length);
+        if (restOfString.startsWith(firstUrl)) {
+          // URL is duplicated without space, use only the first occurrence
+          console.log('🔄 Detected duplicated URL (no separator), using first occurrence');
+          cleaned = firstUrl;
+        } else if (restOfString.trim().startsWith(firstUrl)) {
+          // URL is duplicated with whitespace
+          console.log('🔄 Detected duplicated URL (with whitespace), using first occurrence');
+          cleaned = firstUrl;
+        }
+      }
+      
+      // Fallback: if we still have a duplicated pattern
+      if (cleaned.includes('nrk.no') && cleaned.split('nrk.no').length > 2) {
+        console.log('🔄 Detected duplicated URL pattern, cleaning...');
+        // Find the first complete URL by looking for the pattern
+        const nrkMatch = cleaned.match(/https?:\/\/[^\/]*nrk\.no[^\s]*/);
+        if (nrkMatch) {
+          cleaned = nrkMatch[0];
+          console.log('✅ Found complete URL:', cleaned);
+        } else {
+          // Fallback: split by nrk.no and reconstruct
+          const parts = cleaned.split('nrk.no');
+          cleaned = parts[0] + 'nrk.no' + parts[1];
+          console.log('⚠️ Fallback cleaning:', cleaned);
+        }
       }
     }
     
@@ -78,8 +132,11 @@ export default function Page() {
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
     const text = e.clipboardData.getData('text');
     if (text && text.includes('nrk.no')) {
+      // If it's an NRK URL, prevent default and handle specially
+      e.preventDefault();
       setUrl(cleanUrl(text));
     }
+    // Otherwise, let default paste behavior happen (user can paste other text)
   }, [cleanUrl]);
 
   // Handle keyboard navigation for drop zone
