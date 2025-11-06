@@ -17,8 +17,9 @@ export const maxDuration = 600; // 10 minutes
 const ALLOWED_HOSTS = new Set(['tv.nrk.no', 'www.nrk.no', 'nrk.no', 'radio.nrk.no']);
 
 /**
- * Validate that URL is from allowed NRK domains
+ * Validate that URL is from allowed NRK domains and looks like a video URL
  * Blocks URL tricks like userinfo@host, IP literals, and non-HTTP schemes
+ * Also blocks generic pages like the front page (nrk.no or www.nrk.no without path)
  */
 function isAllowedNrk(urlStr: string): boolean {
   try {
@@ -45,7 +46,53 @@ function isAllowedNrk(urlStr: string): boolean {
     }
     
     // Check if hostname is in allowed list (exact match only)
-    return ALLOWED_HOSTS.has(u.hostname);
+    if (!ALLOWED_HOSTS.has(u.hostname)) {
+      return false;
+    }
+    
+    // Additional validation: Block generic front pages that aren't video URLs
+    // tv.nrk.no and radio.nrk.no are always OK (they only host media)
+    if (u.hostname === 'tv.nrk.no' || u.hostname === 'radio.nrk.no') {
+      // Check if it's a series page (not a specific episode)
+      // Series pages typically have pattern: /serie/serie-name (without episode ID)
+      // Episodes have: /serie/serie-name/episode-id or /serie/serie-name/season/episode
+      const path = u.pathname.toLowerCase();
+      if (path.startsWith('/serie/')) {
+        const pathParts = path.split('/').filter(p => p.length > 0);
+        // If it's just /serie/serie-name (2 parts), it's a series page, not an episode
+        if (pathParts.length === 2) {
+          return false; // Block series pages, require specific episode
+        }
+      }
+      return true;
+    }
+    
+    // For nrk.no and www.nrk.no, require a path that looks like a video URL
+    if (u.hostname === 'nrk.no' || u.hostname === 'www.nrk.no') {
+      const path = u.pathname.toLowerCase();
+      
+      // Block root path (front page)
+      if (path === '/' || path === '') {
+        return false;
+      }
+      
+      // Allow paths that look like video URLs
+      // Common patterns: /video/, /serie/, /program/, /podkast/, etc.
+      const videoPathPatterns = [
+        /^\/video\//,
+        /^\/serie\//,
+        /^\/program\//,
+        /^\/podkast\//,
+        /^\/radio\//,
+        /^\/tv\//,
+        /^\/super\//,
+        /^\/p3\//,
+      ];
+      
+      return videoPathPatterns.some(pattern => pattern.test(path));
+    }
+    
+    return true;
   } catch {
     return false;
   }
@@ -358,8 +405,29 @@ export async function POST(req: NextRequest) {
   }
 
   if (!isAllowedNrk(url)) {
-    logger.warn('Non-NRK URL attempted', { url, ip });
-    return new NextResponse('Only NRK URLs are allowed (tv.nrk.no, www.nrk.no, nrk.no, radio.nrk.no)', { status: 400 });
+    logger.warn('Invalid NRK URL attempted', { url, ip });
+    
+    // Check for specific error cases
+    try {
+      const u = new URL(url);
+      
+      // Front page
+      if ((u.hostname === 'nrk.no' || u.hostname === 'www.nrk.no') && (u.pathname === '/' || u.pathname === '')) {
+        return new NextResponse('Forsiden (nrk.no) er ikke en video. Vennligst lim inn en direkte lenke til en video, serie eller program.', { status: 400 });
+      }
+      
+      // Series page (not a specific episode)
+      if (u.hostname === 'tv.nrk.no' && u.pathname.toLowerCase().startsWith('/serie/')) {
+        const pathParts = u.pathname.split('/').filter(p => p.length > 0);
+        if (pathParts.length === 2) {
+          return new NextResponse('Dette er en serie-side, ikke en spesifikk episode. Vennligst velg en episode fra serien og lim inn lenken til den spesifikke episoden.', { status: 400 });
+        }
+      }
+    } catch {
+      // URL parsing failed, use generic message
+    }
+    
+    return new NextResponse('URL-en ser ikke ut som en gyldig NRK video-lenke. Vennligst bruk en lenke til en spesifikk video eller episode (f.eks. tv.nrk.no/serie/.../episode-id eller www.nrk.no/video/...).', { status: 400 });
   }
 
   // Get video title for filename
