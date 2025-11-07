@@ -672,31 +672,38 @@ export async function POST(req: NextRequest) {
   // Try direct streaming first (fastest), fallback to temp file if it fails
   logger.debug('Attempting direct stream from yt-dlp');
   
-  try {
-    const response = await streamFromStdout(url, safeName, req, format);
-    const duration = Date.now() - startTime;
-    logger.downloadComplete(url, safeName, duration);
-    return response;
-  } catch (err) {
-    logger.warn('Direct streaming failed, falling back to temp file method', { error: (err as Error).message });
+  const formatRequiresMux = typeof format === 'string' && format.includes('+');
+
+  if (!formatRequiresMux) {
     try {
-      const response = await streamFromTempFile(url, safeName, req, format, requestId);
+      const response = await streamFromStdout(url, safeName, req, format);
       const duration = Date.now() - startTime;
       logger.downloadComplete(url, safeName, duration);
       return response;
-    } catch (fallbackErr) {
-      const duration = Date.now() - startTime;
-      logger.downloadError(url, fallbackErr as Error, { duration, method: 'temp-file' });
-      const fallbackCode = typeof (fallbackErr as any)?.code === 'string'
-        ? (fallbackErr as any).code.toString().toUpperCase()
-        : 'YTDLP_FAILED';
-      const details = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
-      return apiError(fallbackCode, 'Nedlasting feilet.', {
-        status: 500,
-        details,
-        requestId,
-      });
+    } catch (err) {
+      logger.warn('Direct streaming failed, falling back to temp file method', { error: (err as Error).message });
     }
+  } else {
+    logger.debug('Format requires muxing, using temp file workflow', { format, url, requestId });
+  }
+
+  try {
+    const response = await streamFromTempFile(url, safeName, req, format, requestId);
+    const duration = Date.now() - startTime;
+    logger.downloadComplete(url, safeName, duration);
+    return response;
+  } catch (fallbackErr) {
+    const duration = Date.now() - startTime;
+    logger.downloadError(url, fallbackErr as Error, { duration, method: 'temp-file' });
+    const fallbackCode = typeof (fallbackErr as any)?.code === 'string'
+      ? (fallbackErr as any).code.toString().toUpperCase()
+      : 'YTDLP_FAILED';
+    const details = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
+    return apiError(fallbackCode, 'Nedlasting feilet.', {
+      status: 500,
+      details,
+      requestId,
+    });
   }
 }
 
