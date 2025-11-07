@@ -6,6 +6,7 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3000
+      - TMP_DIR=/tmp/nrk
       - ALLOW_DOMAINS=nrk.no,tv.nrk.no,www.nrk.no,radio.nrk.no,nrkbeta.no
       - RATE_LIMIT_PER_MINUTE=30
       # - REDIS_URL=redis://default:pass@redis:6379/0

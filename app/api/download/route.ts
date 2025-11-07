@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { spawnSync, spawn } from 'node:child_process';
 import { Readable } from 'node:stream';
-import { createReadStream, mkdtempSync, unlinkSync, readdirSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { createReadStream } from 'node:fs';
+import { promises as fs } from 'node:fs';
+import { join, sep } from 'node:path';
 import { sanitizeFilename } from '@/lib/filename';
 import { rateLimitOk, rateLimit } from '@/lib/rateLimit';
 import { logger, generateRequestId } from '@/lib/logger';
@@ -55,6 +55,62 @@ function getMimeType(filename: string): string {
   };
   
   return mimeTypes[ext] || 'video/mp4'; // Safe default
+}
+
+const TMP_DIR = env.TMP_DIR || '/tmp/nrk';
+
+async function ensureTmpDir() {
+  await fs.mkdir(TMP_DIR, { recursive: true, mode: 0o777 });
+}
+
+const BASE_ARGS = [
+  '--no-playlist',
+  '--force-ipv4',
+  '--add-header', 'Referer: https://tv.nrk.no/',
+  '--add-header', 'User-Agent: Mozilla/5.0',
+];
+
+function normalizeForYtDlp(p: string): string {
+  return p.split(sep).join('/');
+}
+
+function streamArgs(url: string, format?: string): string[] {
+  return [
+    ...BASE_ARGS,
+    '--downloader', 'ffmpeg',
+    '--no-part',
+    '--merge-output-format', 'mp4',
+    '-f', format || 'best/bestvideo+bestaudio',
+    '-o', '-',
+    url,
+  ];
+}
+
+function fileArgs(url: string, outBase: string, format?: string): string[] {
+  const outputPattern = normalizeForYtDlp(join(TMP_DIR, `${outBase}.%(ext)s`));
+  const tempDir = normalizeForYtDlp(TMP_DIR);
+  return [
+    ...BASE_ARGS,
+    '--no-part',
+    '--merge-output-format', 'mp4',
+    '--concurrent-fragments', '4',
+    '-f', format || 'best/bestvideo+bestaudio',
+    '-P', `temp:${tempDir}`,
+    '-o', outputPattern,
+    url,
+  ];
+}
+
+
+async function cleanupTempFiles(prefix: string) {
+  try {
+    const entries = await fs.readdir(TMP_DIR);
+    await Promise.all(entries
+      .filter((entry) => entry.startsWith(`${prefix}.`))
+      .map((entry) => fs.unlink(join(TMP_DIR, entry)).catch(() => undefined)));
+  } catch (error) {
+    logger.warn('Failed to cleanup temp files', { prefix, error: (error as Error).message });
+  }
 }
 
 // Force Node.js runtime (not Edge)
@@ -186,14 +242,7 @@ function getVideoTitle(url: string): string {
  * Abort-safe implementation with proper cleanup
  */
 async function streamFromStdout(url: string, safeName: string, req: NextRequest, format?: string): Promise<NextResponse> {
-  const args = [
-    '--no-playlist',
-    '-f', format || 'bv*+ba/best', // Use selected format or best available
-    '--merge-output-format', 'mp4',
-    '-o', '-', // Write to stdout
-    url,
-  ];
-
+  const args = streamArgs(url, format);
   const child = spawn('yt-dlp', args, { stdio: ['ignore', 'pipe', 'pipe'] });
 
   // Capture stderr for debugging
@@ -203,7 +252,6 @@ async function streamFromStdout(url: string, safeName: string, req: NextRequest,
     stderrBuf += chunk;
   });
 
-  // Abort handler - kill process when client aborts
   const onAbort = () => {
     try {
       child.kill('SIGTERM');
@@ -219,7 +267,6 @@ async function streamFromStdout(url: string, safeName: string, req: NextRequest,
 
   req.signal.addEventListener('abort', onAbort, { once: true });
 
-  // Create ReadableStream with proper cleanup
   const stream = new ReadableStream({
     start(controller) {
       child.stdout.on('data', (data) => {
@@ -254,26 +301,22 @@ async function streamFromStdout(url: string, safeName: string, req: NextRequest,
       });
     },
     cancel() {
-      // Client cancelled the stream - abort the process
       onAbort();
     },
   });
 
-  // Wait for first data chunk to ensure yt-dlp is working
   return new Promise<NextResponse>((resolve, reject) => {
     let hasStarted = false;
     let hasErrored = false;
 
-    // Timeout if no data arrives
     const timeout = setTimeout(() => {
       if (!hasStarted && !hasErrored) {
         hasErrored = true;
         onAbort();
         reject(new Error('Download timeout: yt-dlp did not start sending data'));
       }
-    }, 30000); // 30 second timeout
+    }, 30000);
 
-    // Wait for first data chunk
     child.stdout.once('data', () => {
       if (hasErrored) return;
       hasStarted = true;
@@ -288,16 +331,14 @@ async function streamFromStdout(url: string, safeName: string, req: NextRequest,
       resolve(new NextResponse(stream, { status: 200, headers }));
     });
 
-    // Check for early exit/error (before stream starts)
     child.on('exit', (code, signal) => {
       if (hasErrored) return;
-      
+
       if (code !== 0 && code !== null && !hasStarted) {
         hasErrored = true;
         clearTimeout(timeout);
         logger.ytDlpError(url, stderrBuf, code);
-        
-        // Extract error message from stderr
+
         let errorMsg = 'Download failed';
         if (stderrBuf.includes('ERROR')) {
           const errorMatch = stderrBuf.match(/ERROR:\s*(.+)/);
@@ -309,12 +350,11 @@ async function streamFromStdout(url: string, safeName: string, req: NextRequest,
         } else if (stderrBuf.includes('Private video')) {
           errorMsg = 'Video is private or not available';
         }
-        
+
         reject(new Error(errorMsg));
       }
     });
 
-    // Check for process errors
     child.on('error', (err) => {
       if (hasErrored) return;
       hasErrored = true;
@@ -328,103 +368,109 @@ async function streamFromStdout(url: string, safeName: string, req: NextRequest,
 /**
  * Fallback strategy: Download to temp file, then stream
  */
-async function streamFromTempFile(url: string, safeName: string, req: NextRequest, format?: string): Promise<NextResponse> {
-  const baseTmpDir = env.TMP_DIR || tmpdir();
-  const tmpDir = mkdtempSync(join(baseTmpDir, 'nrk-'));
-  const outTemplate = join(tmpDir, 'out.%(ext)s');
+async function streamFromTempFile(url: string, safeName: string, req: NextRequest, format: string | undefined, requestId: string): Promise<NextResponse> {
+  await ensureTmpDir();
+  const outBase = requestId;
+  const args = fileArgs(url, outBase, format);
 
-  const args = [
-    '--no-playlist',
-    '-f', format || 'bv*+ba/best', // Use selected format or best available
-    '--merge-output-format', 'mp4',
-    '-o', outTemplate,
-    url,
-  ];
+  logger.debug('Downloading to temp file', { tmpDir: TMP_DIR, url, outBase });
 
-  logger.debug('Downloading to temp file', { tmpDir, url });
-  
   return new Promise<NextResponse>((resolve, reject) => {
-    const child = spawn('yt-dlp', args);
+    let settled = false;
+    const resolveOnce = (value: NextResponse) => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
+    const rejectOnce = (error: Error) => {
+      if (settled) return;
+      settled = true;
+      reject(error);
+    };
+
+    const child = spawn('yt-dlp', args, { cwd: TMP_DIR, stdio: ['ignore', 'ignore', 'pipe'] });
     let stderrBuf = '';
 
     child.stderr.setEncoding('utf-8');
     child.stderr.on('data', (chunk) => {
       stderrBuf += chunk;
-      // Log progress
       if (chunk.includes('[download]')) {
-        logger.debug('yt-dlp progress', { progress: chunk.trim() });
+        logger.debug('yt-dlp progress', { progress: chunk.trim(), outBase });
       }
     });
 
-    // Kill on abort
-    req.signal.addEventListener('abort', () => {
+    const abortHandler = () => {
       try {
         child.kill('SIGTERM');
-        // Force kill after 5 seconds if process doesn't exit gracefully
         setTimeout(() => {
           if (!child.killed) {
             child.kill('SIGKILL');
           }
         }, 5000);
-        reject(new Error('Aborted'));
       } catch (err) {
-        console.error('Failed to kill process:', err);
+        logger.warn('Failed to kill process during fallback', { error: err });
+      } finally {
+        cleanupTempFiles(outBase).catch(() => undefined);
+        rejectOnce(new Error('Aborted'));
       }
-    });
+    };
 
-    child.on('exit', (code) => {
+    req.signal.addEventListener('abort', abortHandler, { once: true });
+
+    child.on('exit', async (code) => {
       if (code !== 0 && code !== null) {
         logger.ytDlpError(url, stderrBuf, code);
-        resolve(new NextResponse('Download failed', { status: 500 }));
+        await cleanupTempFiles(outBase);
+        resolveOnce(new NextResponse('Download failed', { status: 500 }));
         return;
       }
 
       try {
-        // Find the downloaded file
-        const files = readdirSync(tmpDir);
-        const downloadedFile = files.find(f => f.startsWith('out.'));
-        
+        const files = await fs.readdir(TMP_DIR);
+        const downloadedFile = files.find((f) => f.startsWith(`${outBase}.`));
+
         if (!downloadedFile) {
-          logger.error('No output file found after download', undefined, { tmpDir, files });
-          resolve(new NextResponse('Download failed - no output file', { status: 500 }));
+          logger.error('No output file found after download', undefined, { tmpDir: TMP_DIR, files, outBase });
+          await cleanupTempFiles(outBase);
+          resolveOnce(new NextResponse('Download failed - no output file', { status: 500 }));
           return;
         }
 
-        const finalPath = join(tmpDir, downloadedFile);
-        const stream = createReadStream(finalPath);
+        const finalPath = join(TMP_DIR, downloadedFile);
+        const nodeStream = createReadStream(finalPath);
 
-        // Cleanup on stream close
-        stream.on('close', () => {
-          try {
-            unlinkSync(finalPath);
-          } catch (err) {
-            console.error('Failed to delete temp file:', err);
-          }
+        nodeStream.on('close', () => {
+          cleanupTempFiles(outBase).catch(() => undefined);
         });
 
-        // Determine Content-Type based on actual file extension
-        const actualFilename = downloadedFile;
-        const contentType = getMimeType(actualFilename);
+        nodeStream.on('error', (err) => {
+          logger.error('Stream error', err, { finalPath });
+          cleanupTempFiles(outBase).catch(() => undefined);
+          resolveOnce(new NextResponse('Failed to stream file', { status: 500 }));
+        });
 
-        const webStream = Readable.toWeb(stream) as ReadableStream;
-
+        const contentType = getMimeType(downloadedFile);
         const headers = new Headers();
         headers.set('Content-Type', contentType);
         headers.set('Content-Disposition', getContentDisposition(safeName));
         headers.set('Cache-Control', 'no-store');
         headers.set('X-Content-Type-Options', 'nosniff');
 
-        logger.debug('Starting stream', { downloadedFile, contentType });
-        resolve(new NextResponse(webStream, { headers }));
+        const webStream = Readable.toWeb(nodeStream) as ReadableStream;
+        logger.debug('Starting fallback stream', { downloadedFile, contentType, outBase });
+
+        resolveOnce(new NextResponse(webStream, { headers }));
       } catch (err) {
-        logger.error('Stream error', err as Error, { tmpDir });
-        resolve(new NextResponse('Failed to stream file', { status: 500 }));
+        logger.error('Stream error', err as Error, { tmpDir: TMP_DIR, outBase });
+        await cleanupTempFiles(outBase);
+        resolveOnce(new NextResponse('Failed to stream file', { status: 500 }));
       }
     });
 
     child.on('error', (err) => {
-      logger.error('Process error', err, { url });
-      resolve(new NextResponse('Download process failed', { status: 500 }));
+      logger.error('Process error', err, { url, outBase });
+      cleanupTempFiles(outBase).catch(() => undefined);
+      resolveOnce(new NextResponse('Download process failed', { status: 500 }));
     });
   });
 }
@@ -537,6 +583,8 @@ export async function POST(req: NextRequest) {
 
   logger.downloadStart(url, safeName, ip);
 
+  await ensureTmpDir();
+
   // Try direct streaming first (fastest), fallback to temp file if it fails
   logger.debug('Attempting direct stream from yt-dlp');
   
@@ -548,7 +596,7 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     logger.warn('Direct streaming failed, falling back to temp file method', { error: (err as Error).message });
     try {
-      const response = await streamFromTempFile(url, safeName, req, format);
+      const response = await streamFromTempFile(url, safeName, req, format, requestId);
       const duration = Date.now() - startTime;
       logger.downloadComplete(url, safeName, duration);
       return response;

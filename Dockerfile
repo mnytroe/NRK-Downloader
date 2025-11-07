@@ -21,6 +21,7 @@ FROM node:20-bookworm-slim AS runner
 RUN apt-get update && apt-get install -y --no-install-recommends \
   ffmpeg ca-certificates tini \
   && rm -rf /var/lib/apt/lists/*
+RUN mkdir -p /tmp/nrk && chmod 1777 /tmp/nrk
 # sørg for at ingen gammel /usr/bin/yt-dlp blir brukt
 RUN rm -f /usr/bin/yt-dlp || true
 # bruk binæren fra deps
