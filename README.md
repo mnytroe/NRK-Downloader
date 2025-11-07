@@ -6,85 +6,66 @@ En Next.js-applikasjon for å laste ned videoer fra NRK ved hjelp av yt-dlp og f
 
 Dette prosjektet lar brukere laste ned videoinnhold fra NRK sine offisielle plattformer. Applikasjonen:
 - Støtter kun NRK-domener (sikkerhet)
+- Viser metadata (tittel, beskrivelse, kvaliteter) før nedlasting
+- Lar brukeren velge ønsket videokvalitet (`format_id`)
 - Streamer video direkte til brukerens enhet
 - Håndterer avbrutt nedlasting
 - Har innebygd rate limiting
 
-## ⚙️ Forutsetninger
+## ⚙️ Forutsetninger (uten Docker)
 
-Du må ha følgende installert på systemet:
+Du må ha følgende installert dersom du kjører lokalt:
 
 ### 1. Node.js
 - Versjon 18.0.0 eller nyere
 - Last ned fra [nodejs.org](https://nodejs.org/)
 
 ### 2. yt-dlp
-Installér via en av følgende metoder:
+Installer via en av følgende metoder:
 
-**Windows (med winget):**
 ```bash
+# Windows (winget)
 winget install yt-dlp
-```
 
-**macOS (med Homebrew):**
-```bash
+# macOS (Homebrew)
 brew install yt-dlp
-```
 
-**Linux:**
-```bash
+# Linux
 sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
 sudo chmod a+rx /usr/local/bin/yt-dlp
 ```
 
 ### 3. ffmpeg
-Installér via en av følgende metoder:
-
-**Windows (med winget):**
 ```bash
+# Windows (winget)
 winget install Gyan.FFmpeg
-```
 
-**macOS (med Homebrew):**
-```bash
+# macOS (Homebrew)
 brew install ffmpeg
-```
 
-**Linux:**
-```bash
+# Linux
 sudo apt update
 sudo apt install ffmpeg
 ```
 
 ### Verifiser installasjon
-Sjekk at alt er installert korrekt:
 ```bash
-node --version    # Skal vise v18.x.x eller nyere
-yt-dlp --version  # Skal vise versjonsnummer
-ffmpeg -version   # Skal vise versjonsinformasjon
+node --version    # v18.x.x eller nyere
+yt-dlp --version
+ffmpeg -version
 ```
 
-## 🚀 Installasjon og kjøring
+## 🚀 Installasjon og kjøring (lokalt)
 
-### 1. Installer avhengigheter
 ```bash
 npm install
-```
+npm run dev   # utviklingsmodus på http://localhost:3000
 
-### 2. Kjør i utviklingsmodus
-```bash
-npm run dev
-```
-
-Åpne [http://localhost:3000](http://localhost:3000) i nettleseren.
-
-### 3. Bygg for produksjon
-```bash
 npm run build
-npm start
+npm start     # produksjonsbuild
 ```
 
-**Merk:** Se `.env.example` for miljøvariabler som må settes (ALLOW_DOMAINS, RATE_LIMIT_PER_MINUTE, etc.)
+**Merk:** Se `.env.example` for miljøvariabler (`ALLOW_DOMAINS`, `RATE_LIMIT_PER_MINUTE`, `REDIS_URL`, `TMP_DIR`, `LOG_LEVEL`, ...).
 
 ## 📁 Prosjektstruktur
 
@@ -92,202 +73,157 @@ npm start
 nrk-downloader/
 ├── app/
 │   ├── api/
-│   │   └── download/
-│   │       └── route.ts          # API route handler
-│   ├── globals.css               # Global styles
-│   ├── layout.tsx                # Root layout
-│   └── page.tsx                  # Main page (client component)
+│   │   ├── download/route.ts      # Nedlasting
+│   │   └── inspect/route.ts       # Metadata (yt-dlp --dump-single-json)
+│   ├── globals.css
+│   ├── layout.tsx
+│   └── page.tsx
 ├── lib/
-│   ├── env.ts                   # Environment variable validation (Zod)
-│   ├── filename.ts               # Filename sanitization
-│   ├── host.ts                   # Host normalization and validation
-│   ├── rateLimit.ts              # Rate limiting (Redis + in-memory)
-│   └── redis.ts                  # Redis client
-├── nginx/
-│   └── example.conf              # Nginx reverse proxy example
-├── package.json
-├── tsconfig.json
-├── next.config.ts
-├── tailwind.config.ts
+│   ├── env.ts
+│   ├── filename.ts
+│   ├── host.ts
+│   ├── rateLimit.ts
+│   └── redis.ts
+├── nginx/example.conf
+├── Dockerfile
+├── docker-compose.yml
 └── README.md
 ```
 
 ## 🔒 Sikkerhet
 
 ### Domenebegrensning
-Tillatte domener konfigureres via `ALLOW_DOMAINS` miljøvariabel (kommaseparert liste).
-Standard domener:
+`ALLOW_DOMAINS` (kommaseparert) styrer hvilke domener som tillates.
+Standard:
 - `tv.nrk.no`
 - `www.nrk.no`
 - `nrk.no`
 - `radio.nrk.no`
 - `nrkbeta.no`
 
-### Rate Limiting
-- Konfigurerbart via `RATE_LIMIT_PER_MINUTE` (standard: 30 per minutt)
-- Redis-støtte for distribuert rate limiting (valgfritt)
-- Automatisk fallback til in-memory hvis Redis ikke er tilgjengelig
-- Sliding window algoritme for nøyaktig rate limiting
+### Rate limiting
+- `RATE_LIMIT_PER_MINUTE` (standard 30/min)
+- Redis-støtte for distribuert rate limiting
+- Fallback til in-memory (sliding window)
 
 ### Filnavn
-- Alle filnavn saniteres for å fjerne farlige tegn
-- Maksimal lengde: 120 tegn
-- Path separators og spesialtegn fjernes
+- Sanitiseres for farlige tegn
+- Maks 120 tegn
+- Ingen path-separatorer
 
-## 🐋 Produksjonskjøring (Anbefalt: Docker)
+## 🐋 Produksjon med Docker
 
-**VIKTIG:** For produksjonskjøring anbefales det sterkt å kjøre applikasjonen i en Docker-container eller dedikert VM, **IKKE** på serverless plattformer som Vercel.
-
-### Hvorfor ikke serverless?
-
-1. **Lange streams**: Videoer kan ta flere minutter å laste ned
-2. **CPU-intensivt**: ffmpeg remuxing krever betydelig CPU
-3. **Timeout-begrensninger**: Serverless har typisk 10-30s timeout
-4. **Memory-begrensninger**: Store videofiler krever mer minne
-
-### Docker-oppsett (eksempel)
-
-Lag en `Dockerfile`:
+Multi-stage Dockerfile installerer verktøy, henter statisk `yt-dlp_linux` og bygger Next.
 
 ```dockerfile
-FROM node:18-alpine
-
-# Installer ffmpeg og yt-dlp
-RUN apk add --no-cache ffmpeg python3 py3-pip
-RUN pip3 install yt-dlp
-
+# deps: verktøy + yt-dlp + npm ci
+FROM node:20-bookworm-slim AS deps
+RUN apt-get update && apt-get install -y --no-install-recommends \
+  curl ffmpeg ca-certificates git tini \
+  && rm -rf /var/lib/apt/lists/*
+ARG YTDLP_VERSION=2025.10.22
+RUN curl -L "https://github.com/yt-dlp/yt-dlp/releases/download/${YTDLP_VERSION}/yt-dlp_linux" \
+  -o /usr/local/bin/yt-dlp && chmod a+rx /usr/local/bin/yt-dlp
 WORKDIR /app
-
 COPY package*.json ./
-RUN npm ci --only=production
+RUN npm ci
 
+# build Next
+FROM deps AS build
 COPY . .
 RUN npm run build
 
+# runtime: non-root, tini
+FROM node:20-bookworm-slim AS runner
+RUN apt-get update && apt-get install -y --no-install-recommends \
+  ffmpeg ca-certificates tini \
+  && rm -rf /var/lib/apt/lists/*
+RUN rm -f /usr/bin/yt-dlp || true
+COPY --from=deps /usr/local/bin/yt-dlp /usr/local/bin/yt-dlp
+WORKDIR /app
+ENV NODE_ENV=production
+ENV PORT=3000
+ENV NEXT_TELEMETRY_DISABLED=1
+RUN useradd -m -u 10001 appuser
+USER appuser
+COPY --chown=appuser:appuser --from=build /app/.next ./.next
+COPY --chown=appuser:appuser --from=build /app/node_modules ./node_modules
+COPY --chown=appuser:appuser --from=build /app/package*.json ./
 EXPOSE 3000
-
-CMD ["npm", "start"]
+ENTRYPOINT ["/usr/bin/tini","--"]
+CMD ["npm","start"]
 ```
 
-Bygg og kjør:
 ```bash
 docker build -t nrk-downloader .
 docker run -p 3000:3000 nrk-downloader
-```
-
-Eller bruk `docker-compose.yml`:
-```bash
+# eller
 docker compose up -d --build
 ```
 
-#### Rask Nginx + TLS (eksempel)
+### Nginx + TLS (hurtigoppsett)
 ```bash
-sudo cp nginx/example.conf /etc/nginx/sites-available/your-domain.example.com
-sudo ln -s /etc/nginx/sites-available/your-domain.example.com /etc/nginx/sites-enabled/
+sudo cp nginx/example.conf /etc/nginx/sites-available/your-domain.conf
+sudo ln -s /etc/nginx/sites-available/your-domain.conf /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl reload nginx
-sudo apt -y install certbot python3-certbot-nginx
+sudo apt install -y certbot python3-certbot-nginx
 sudo certbot --nginx -d your-domain.example.com --redirect
 ```
 
-> Bytt ut `your-domain.example.com` med ditt faktiske domene.
+## 🛠️ Teknisk
 
-## 🛠️ Teknisk implementasjon
+### Metadata-inspeksjon
+- Frontend kaller `/api/inspect` (yt-dlp `--dump-single-json`).
+- Viser tittel, beskrivelser, varighet, thumbnail og alle tilgjengelige formater.
+- Bruker kan velge `format_id` før nedlasting.
+- Sendes videre til `/api/download` som bruker `-f <format>`.
 
-### Streaming-strategi
-
-**Primær:** stdout streaming
-- yt-dlp skriver direkte til stdout (`-o -`)
-- Piped til NextResponse via Web ReadableStream
-- Raskest og mest minneeffektiv
-
-**Fallback:** Temp file
-- Hvis stdout feiler (fragmenterte streams)
-- Last ned til midlertidig fil
-- Stream med `fs.createReadStream`
-- Automatisk opprydding etter nedlasting
-
-### Format-håndtering
-
-Applikasjonen prøver å levere MP4 når mulig:
-```
--f "bv*[ext=mp4][vcodec*=avc1]+ba[ext=m4a]/b[ext=mp4]/best"
---remux-video mp4
-```
-
-Hvis MP4 ikke er mulig, fall tilbake til original container med korrekt Content-Type.
+### Streaming
+- **Primær:** yt-dlp -> stdout -> abort-sikker `ReadableStream`.
+- **Fallback:** nedlasting til temp-katalog og streaming via `createReadStream` (auto-opprydding).
 
 ### Abort-håndtering
-
-**Klient:**
-- `AbortController` stopper fetch-request
-- UI oppdateres umiddelbart
-
-**Server:**
-- Lytter på `req.signal.addEventListener('abort')`
-- Sender `SIGKILL` til yt-dlp child process
-- Rydder opp midlertidige filer
+- Klient: `AbortController` oppdaterer UI og sender abort-signal.
+- Server: lytter på `req.signal`, sender `SIGTERM`/`SIGKILL`, rydder tmp-filer.
 
 ## ⚖️ Juridisk
 
-**VIKTIG:** Dette verktøyet er kun for personlig bruk av innhold du har lov til å laste ned.
-
-- Brukeren er ansvarlig for å overholde NRKs retningslinjer
-- Last kun ned innhold du har rettigheter til
-- Respektér opphavsrett og lisensvilkår
+Dette verktøyet er kun for personlig bruk av innhold du har lov til å laste ned. Brukeren er ansvarlig for å følge NRKs retningslinjer og gjeldende lovverk.
 
 ## 🐛 Feilsøking
 
-### "yt-dlp not found"
-- Sjekk at yt-dlp er i PATH: `yt-dlp --version`
-- På Windows: restart terminal etter installasjon
-
-### "ffmpeg not found"
-- Sjekk at ffmpeg er i PATH: `ffmpeg -version`
-- På Windows: legg til i System Environment Variables
-
-### "Rate limit exceeded"
-- Vent 1 minutt og prøv igjen
-- Eller restart serveren for å resette in-memory teller
-
-### Nedlasting feiler
-- Sjekk at URL-en er gyldig og tilgjengelig på NRK
-- Sjekk at du har internettforbindelse
-- Se server-logs for detaljert feilmelding
-
-### Timeout på store filer
-- Øk `maxDuration` i `app/api/download/route.ts`
-- For Vercel: vurder annen hosting-løsning
+| Problem               | Løsning |
+| --------------------- | ------- |
+| `yt-dlp not found`    | Sjekk PATH, restart terminal, sørg for installasjon |
+| `ffmpeg not found`    | Installer ffmpeg, legg i PATH |
+| `Rate limit exceeded` | Vent litt, eller restart server (resetter in-memory) |
+| Nedlasting feiler     | Kontroller URL, nettverk og server-logs |
+| Timeout på store filer| Øk `maxDuration`, vurder annen hosting enn serverless |
 
 ## ✨ Nye funksjoner
 
-### v1.2.0 (Aktuell)
-- ✅ **Klassisk minimalistisk design** - Rent, enkelt UI uten unødvendige effekter
-- ✅ **Optimalisert layout** - Ingen scrolling nødvendig, alt synlig på skjermen
-- ✅ **Forbedret dark mode** - Mørkere bakgrunn for bedre kontrast
-- ✅ **Fjernet "NRK URL"-label** - Mer kompakt design
+### v1.2.0
+- Metadata-inspeksjon før nedlasting
+- Kvalitetsvalg (`format_id`)
+- Abort-sikker yt-dlp-håndtering
+- Oppdatert Dockerfile (statisk yt-dlp, non-root runtime)
+- Forbedret dark mode
 
 ### v1.1.0
-- ✅ **Strukturert logging og monitoring** - Bedre feilsøking og overvåking
-- ✅ **Fremdriftsindikator** - Viser prosent, nedlastede/totale bytes og gjenstående tid
-- ✅ **Drag & Drop** - Dra og slipp NRK URL-er direkte fra nettleseren
-- ✅ **Forbedrede loading-animasjoner** - Moderne spinner og animert progress bar
-- ✅ **Clipboard-støtte** - Lim inn URL-er med Ctrl+V
+- Strukturert logging & monitoring
+- Fremdriftsindikator
+- Drag & Drop
+- Forbedrede loading-animasjoner
+- Clipboard-støtte
 
 ## 📝 Fremtidige forbedringer
-
 - [ ] Støtte for undertekster
-- [ ] Valg av videokvalitet (720p, 1080p, etc.)
-- [ ] Historikk over nedlastede videoer
-- [ ] HEAD-request for å hente metadata før nedlasting
-- [x] Redis-basert rate limiting for skalerbarhet ✅
-- [ ] Queue-system for samtidige nedlastinger
-- [ ] Administratorpanel med statistikk
+- [ ] Historikk over nedlastinger
+- [ ] Queue for samtidige nedlastinger
+- [ ] Administratorpanel/statistikk
 
 ## 📄 Lisens
-
-Dette prosjektet er laget for personlig bruk. Vennligst bruk ansvarlig og i henhold til gjeldende lover og NRKs retningslinjer.
+Prosjektet er laget for personlig bruk. Benytt med ansvar og i tråd med NRKs retningslinjer.
 
 ---
-
-**Laget med ❤️ og Next.js**
-
+Laget med ❤️ og Next.js
