@@ -57,6 +57,24 @@ function getMimeType(filename: string): string {
   return mimeTypes[ext] || 'video/mp4'; // Safe default
 }
 
+function apiError(
+  code: string,
+  message: string,
+  opts?: { status?: number; details?: string; requestId?: string; hint?: string; retryAfterMs?: number },
+) {
+  return NextResponse.json(
+    {
+      code,
+      message,
+      details: opts?.details,
+      requestId: opts?.requestId,
+      hint: opts?.hint,
+      retryAfterMs: opts?.retryAfterMs,
+    },
+    { status: opts?.status ?? 400 },
+  );
+}
+
 const TMP_DIR = env.TMP_DIR || '/tmp/nrk';
 
 async function ensureTmpDir() {
@@ -313,7 +331,10 @@ async function streamFromStdout(url: string, safeName: string, req: NextRequest,
       if (!hasStarted && !hasErrored) {
         hasErrored = true;
         onAbort();
-        reject(new Error('Download timeout: yt-dlp did not start sending data'));
+        const timeoutError = new Error('Download timeout: yt-dlp did not start sending data');
+        (timeoutError as any).code = 'YTDLP_START_TIMEOUT';
+        (timeoutError as any).details = stderrBuf;
+        reject(timeoutError);
       }
     }, 30000);
 
@@ -351,7 +372,10 @@ async function streamFromStdout(url: string, safeName: string, req: NextRequest,
           errorMsg = 'Video is private or not available';
         }
 
-        reject(new Error(errorMsg));
+        const err = new Error(errorMsg);
+        (err as any).code = 'YTDLP_FAILED';
+        (err as any).details = stderrBuf;
+        reject(err);
       }
     });
 
@@ -360,7 +384,10 @@ async function streamFromStdout(url: string, safeName: string, req: NextRequest,
       hasErrored = true;
       clearTimeout(timeout);
       logger.error('yt-dlp process error', err, { url });
-      reject(new Error(`Failed to start download: ${err.message}`));
+      const wrapped = new Error(`Failed to start download: ${err.message}`);
+      (wrapped as any).code = 'YTDLP_FAILED';
+      (wrapped as any).details = stderrBuf || err.message;
+      reject(wrapped);
     });
   });
 }
@@ -421,7 +448,13 @@ async function streamFromTempFile(url: string, safeName: string, req: NextReques
       if (code !== 0 && code !== null) {
         logger.ytDlpError(url, stderrBuf, code);
         await cleanupTempFiles(outBase);
-        resolveOnce(new NextResponse('Download failed', { status: 500 }));
+        resolveOnce(
+          apiError('YTDLP_FAILED', 'Nedlasting feilet.', {
+            status: 500,
+            details: stderrBuf,
+            requestId,
+          }),
+        );
         return;
       }
 
@@ -432,7 +465,13 @@ async function streamFromTempFile(url: string, safeName: string, req: NextReques
         if (!downloadedFile) {
           logger.error('No output file found after download', undefined, { tmpDir: TMP_DIR, files, outBase });
           await cleanupTempFiles(outBase);
-          resolveOnce(new NextResponse('Download failed - no output file', { status: 500 }));
+          resolveOnce(
+            apiError('YTDLP_FAILED', 'Nedlasting feilet - fant ingen utdatafil.', {
+              status: 500,
+              details: stderrBuf,
+              requestId,
+            }),
+          );
           return;
         }
 
@@ -446,7 +485,13 @@ async function streamFromTempFile(url: string, safeName: string, req: NextReques
         nodeStream.on('error', (err) => {
           logger.error('Stream error', err, { finalPath });
           cleanupTempFiles(outBase).catch(() => undefined);
-          resolveOnce(new NextResponse('Failed to stream file', { status: 500 }));
+          resolveOnce(
+            apiError('YTDLP_FAILED', 'Kunne ikke strømme filen.', {
+              status: 500,
+              details: err instanceof Error ? err.message : String(err),
+              requestId,
+            }),
+          );
         });
 
         const contentType = getMimeType(downloadedFile);
@@ -463,14 +508,26 @@ async function streamFromTempFile(url: string, safeName: string, req: NextReques
       } catch (err) {
         logger.error('Stream error', err as Error, { tmpDir: TMP_DIR, outBase });
         await cleanupTempFiles(outBase);
-        resolveOnce(new NextResponse('Failed to stream file', { status: 500 }));
+        resolveOnce(
+          apiError('YTDLP_FAILED', 'Kunne ikke strømme filen.', {
+            status: 500,
+            details: err instanceof Error ? err.message : String(err),
+            requestId,
+          }),
+        );
       }
     });
 
     child.on('error', (err) => {
       logger.error('Process error', err, { url, outBase });
       cleanupTempFiles(outBase).catch(() => undefined);
-      resolveOnce(new NextResponse('Download process failed', { status: 500 }));
+      resolveOnce(
+        apiError('YTDLP_FAILED', 'Nedlastingsprosessen feilet.', {
+          status: 500,
+          details: err instanceof Error ? err.message : String(err),
+          requestId,
+        }),
+      );
     });
   });
 }
@@ -492,14 +549,22 @@ export async function POST(req: NextRequest) {
     const rl = await rateLimit(req);
     if (!rl.allowed) {
       logger.rateLimitHit(ip, rl.limit);
-      return new NextResponse('Rate limit exceeded. Try again later.', { status: 429 });
+      return apiError('RATE_LIMITED', 'For mange forespørsler. Prøv igjen senere.', {
+        status: 429,
+        requestId,
+        retryAfterMs: 60_000,
+      });
     }
   } catch (error) {
     // Fallback til gammel rate limiting hvis ny feiler
     logger.warn('Rate limit check failed, using fallback', { error });
     if (!rateLimitOk(req)) {
       logger.rateLimitHit(ip, 5);
-      return new NextResponse('Rate limit exceeded. Try again later.', { status: 429 });
+      return apiError('RATE_LIMITED', 'For mange forespørsler. Prøv igjen senere.', {
+        status: 429,
+        requestId,
+        retryAfterMs: 60_000,
+      });
     }
   }
 
@@ -533,12 +598,19 @@ export async function POST(req: NextRequest) {
     }
   } catch (error) {
     logger.error('Invalid request body', error as Error, { ip });
-    return new NextResponse('Invalid request body', { status: 400 });
+    return apiError('INVALID_REQUEST', 'Ugyldig forespørsel.', {
+      status: 400,
+      requestId,
+      details: error instanceof Error ? error.message : undefined,
+    });
   }
 
   if (!url || typeof url !== 'string') {
     logger.warn('Missing or invalid URL', { url, ip });
-    return new NextResponse('Missing or invalid URL', { status: 400 });
+    return apiError('INVALID_URL', 'Mangler eller ugyldig URL.', {
+      status: 400,
+      requestId,
+    });
   }
 
   // URL validation - prøv ny funksjon først, fallback til gammel
@@ -560,21 +632,33 @@ export async function POST(req: NextRequest) {
       
       // Front page
       if ((u.hostname === 'nrk.no' || u.hostname === 'www.nrk.no') && (u.pathname === '/' || u.pathname === '')) {
-        return new NextResponse('Forsiden (nrk.no) er ikke en video. Vennligst lim inn en direkte lenke til en video, serie eller program.', { status: 400 });
+        return apiError('NOT_VIDEO_PAGE', 'Forsiden (nrk.no) er ikke en video. Vennligst lim inn en direkte lenke til en video, serie eller program.', {
+          status: 400,
+          requestId,
+          hint: 'Åpne videoen du vil laste ned, og kopier lenken fra nettleseren.',
+        });
       }
       
       // Series page (not a specific episode)
       if (u.hostname === 'tv.nrk.no' && u.pathname.toLowerCase().startsWith('/serie/')) {
         const pathParts = u.pathname.split('/').filter(p => p.length > 0);
         if (pathParts.length === 2) {
-          return new NextResponse('Dette er en serie-side, ikke en spesifikk episode. Vennligst velg en episode fra serien og lim inn lenken til den spesifikke episoden.', { status: 400 });
+          return apiError('SERIES_PAGE', 'Dette er en serie-side, ikke en spesifikk episode.', {
+            status: 400,
+            requestId,
+            hint: 'Velg en konkret episode fra serien, og kopier lenken til den siden.',
+          });
         }
       }
     } catch {
       // URL parsing failed, use generic message
     }
     
-    return new NextResponse('URL-en ser ikke ut som en gyldig NRK video-lenke. Vennligst bruk en lenke til en spesifikk video eller episode (f.eks. tv.nrk.no/serie/.../episode-id eller www.nrk.no/video/...).', { status: 400 });
+    return apiError('DOMAIN_NOT_ALLOWED', 'URL-en ser ikke ut som en gyldig NRK video-lenke.', {
+      status: 400,
+      requestId,
+      hint: 'Bruk en lenke til en spesifikk video eller episode, for eksempel tv.nrk.no/serie/.../episode-id.',
+    });
   }
 
   // Get video title for filename
@@ -603,7 +687,15 @@ export async function POST(req: NextRequest) {
     } catch (fallbackErr) {
       const duration = Date.now() - startTime;
       logger.downloadError(url, fallbackErr as Error, { duration, method: 'temp-file' });
-      return new NextResponse('Download failed', { status: 500 });
+      const fallbackCode = typeof (fallbackErr as any)?.code === 'string'
+        ? (fallbackErr as any).code.toString().toUpperCase()
+        : 'YTDLP_FAILED';
+      const details = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
+      return apiError(fallbackCode, 'Nedlasting feilet.', {
+        status: 500,
+        details,
+        requestId,
+      });
     }
   }
 }

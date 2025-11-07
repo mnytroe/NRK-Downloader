@@ -1,8 +1,15 @@
 'use client';
 
 import React, { useRef, useState, useCallback, useEffect } from 'react';
+import ErrorAlert from '@/components/ErrorAlert';
+import { normalizeResponseError, type NormalizedError } from '@/lib/errorMap';
 
-type Status = 'idle' | 'working' | 'done' | 'error' | 'aborted';
+type Status =
+  | { kind: 'idle' }
+  | { kind: 'working' }
+  | { kind: 'done' }
+  | { kind: 'aborted' }
+  | { kind: 'error'; payload: NormalizedError };
 
 interface VideoFormat {
   format_id: string;
@@ -23,8 +30,7 @@ interface VideoMetadata {
 
 export default function Page() {
   const [url, setUrl] = useState('');
-  const [status, setStatus] = useState<Status>('idle');
-  const [errorMsg, setErrorMsg] = useState<string>('');
+  const [status, setStatus] = useState<Status>(() => ({ kind: 'idle' }));
   const [isDragOver, setIsDragOver] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [metadata, setMetadata] = useState<VideoMetadata | null>(null);
@@ -32,7 +38,7 @@ export default function Page() {
   const [isInspecting, setIsInspecting] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
-  const isWorking = status === 'working';
+  const isWorking = status.kind === 'working';
 
   // Clean and validate URL
   const cleanUrl = useCallback((url: string): string => {
@@ -285,60 +291,78 @@ export default function Page() {
 
   async function onDownload() {
     const cleanedUrl = cleanUrl(url);
-    
-    // Debug logging
+
     console.log('Original URL:', url);
     console.log('Cleaned URL:', cleanedUrl);
-    
+
     if (!cleanedUrl.trim()) {
-      setErrorMsg('Vennligst skriv inn en gyldig NRK URL');
-      setStatus('error');
+      setStatus({
+        kind: 'error',
+        payload: {
+          code: 'MISSING_URL',
+          title: 'URL mangler',
+          message: 'Vennligst skriv inn en NRK-adresse.',
+          hint: 'Lim inn en lenke fra tv.nrk.no eller nrk.no/video.',
+        },
+      });
       return;
     }
 
-    // Check if URL contains NRK domain
     if (!cleanedUrl.includes('nrk.no')) {
-      setErrorMsg('Kun NRK-lenker støttes');
-      setStatus('error');
+      setStatus({
+        kind: 'error',
+        payload: {
+          code: 'DOMAIN_NOT_ALLOWED',
+          title: 'Ugyldig domene',
+          message: 'Kun NRK-lenker støttes.',
+          hint: 'Bruk en adresse fra tv.nrk.no, radio.nrk.no eller nrk.no/video.',
+        },
+      });
       return;
     }
 
-    setStatus('working');
-    setErrorMsg('');
-    
-    // Abort any existing request
+    setStatus({ kind: 'working' });
+
     abortRef.current?.abort();
-    abortRef.current = new AbortController();
+    const controller = new AbortController();
+    abortRef.current = controller;
 
     try {
       const res = await fetch('/api/download', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           url: cleanedUrl,
-          format: selectedFormat || undefined, // Send selected format if available
+          format: selectedFormat || undefined,
         }),
-        signal: abortRef.current.signal,
+        signal: controller.signal,
       });
 
       if (!res.ok) {
-        const errText = await res.text();
-        throw new Error(errText || `HTTP ${res.status}`);
+        const err = await normalizeResponseError(res);
+        setStatus({ kind: 'error', payload: err });
+        return;
       }
 
-      // Extract filename from Content-Disposition header
       const disp = res.headers.get('Content-Disposition') || '';
       const match = /filename="([^"]+)"/i.exec(disp);
       const filename = match?.[1] ?? 'nrk-video.mp4';
 
-      // Download blob and trigger download
       const blob = await res.blob();
-      
-      // Check if blob is empty (0 bytes) - indicates download failed
+
       if (blob.size === 0) {
-        throw new Error('Download failed: received empty file. Video may not be available or download failed.');
+        setStatus({
+          kind: 'error',
+          payload: {
+            code: 'EMPTY_DOWNLOAD',
+            title: 'Tom fil mottatt',
+            message: 'Serveren returnerte en tom videofil.',
+            hint: 'Prøv igjen, eller kontroller at videoen er tilgjengelig.',
+          },
+        });
+        return;
       }
-      
+
       const href = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = href;
@@ -348,31 +372,28 @@ export default function Page() {
       a.remove();
       URL.revokeObjectURL(href);
 
-      setStatus('done');
+      setStatus({ kind: 'done' });
     } catch (e: any) {
       if (e?.name === 'AbortError') {
-        setStatus('aborted');
-        setErrorMsg(''); // Status badge viser allerede "Avbrutt"
-      } else if (e?.message?.includes('Rate limit')) {
-        setStatus('error');
-        setErrorMsg('Rate limit: prøv igjen om 60s');
-      } else if (e?.message?.includes('Only NRK URLs')) {
-        setStatus('error');
-        setErrorMsg('Kun NRK-lenker støttes');
-      } else if (e?.message?.includes('Invalid request')) {
-        setStatus('error');
-        setErrorMsg('Ugyldig URL-format');
+        setStatus({ kind: 'aborted' });
       } else {
-        setStatus('error');
-        setErrorMsg(e?.message || 'Nedlasting feilet');
+        const fallbackError: NormalizedError = {
+          code: typeof e?.code === 'string' ? e.code.toString().toUpperCase() : 'UNKNOWN_ERROR',
+          title: 'Nedlasting feilet',
+          message: e?.message || 'Noe gikk galt under nedlasting.',
+          details: e?.details ? String(e.details).slice(0, 4000) : undefined,
+        };
+        setStatus({ kind: 'error', payload: fallbackError });
       }
+    } finally {
+      abortRef.current = null;
     }
   }
 
   function onAbort() {
     abortRef.current?.abort();
-    setStatus('aborted');
-    setErrorMsg(''); // Status badge viser allerede "Avbrutt"
+    abortRef.current = null;
+    setStatus({ kind: 'aborted' });
   }
 
   function handleKeyPress(e: React.KeyboardEvent) {
@@ -387,7 +408,7 @@ export default function Page() {
     done: 'Ferdig!',
     error: 'Feil',
     aborted: 'Avbrutt',
-  }[status];
+  }[status.kind];
 
   return (
     <main className="shell">
@@ -550,17 +571,17 @@ export default function Page() {
         ) : (
           <div className="pt-1">
             <span className={`badge ${
-              status === 'idle'    ? 'badge-idle' :
-              status === 'done'    ? 'badge-done' :
-              status === 'error'   ? 'badge-error' : 'badge-aborted'
+              status.kind === 'idle'    ? 'badge-idle' :
+              status.kind === 'done'    ? 'badge-done' :
+              status.kind === 'error'   ? 'badge-error' : 'badge-aborted'
             }`}>
               Status: {statusText}
             </span>
 
-            {errorMsg && (
-              <p className="text-sm text-red-600 dark:text-red-400 mt-2">
-                {errorMsg}
-              </p>
+            {status.kind === 'error' && (
+              <div className="mt-3">
+                <ErrorAlert err={status.payload} />
+              </div>
             )}
           </div>
         )}
