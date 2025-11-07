@@ -227,3 +227,14 @@ Prosjektet er laget for personlig bruk. Benytt med ansvar og i tråd med NRKs re
 
 ---
 Laget med ❤️ og Next.js
+
+## Deploy
+
+På serveren kan du oppdatere prosjektet med ett enkelt steg:
+
+```bash
+./deploy.sh
+```
+
+Scriptet utfører `git fetch/pull`, bygger Docker-image på nytt og starter tjenesten via docker compose.
+
