@@ -77,8 +77,10 @@ export async function GET(req: NextRequest) {
         fps: f.fps,
         vcodec: f.vcodec,
         acodec: f.acodec,
+        hasAudio: !!(f.acodec && f.acodec !== "none"),
         filesize: f.filesize,
         quality: f.height ? `${f.height}p` : f.quality || "unknown",
+        format_note: f.format_note,
       }))
       .sort((a: any, b: any) => (b.height || 0) - (a.height || 0));
 

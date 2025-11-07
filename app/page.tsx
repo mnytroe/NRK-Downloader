@@ -17,6 +17,9 @@ interface VideoFormat {
   width: number;
   quality: string;
   filesize?: number;
+  acodec?: string;
+  hasAudio: boolean;
+  format_note?: string;
 }
 
 interface VideoMetadata {
@@ -268,17 +271,23 @@ export default function Page() {
         const res = await fetch(`/api/inspect?url=${encodeURIComponent(cleanedUrl)}`);
         if (res.ok) {
           const data = await res.json();
-          setMetadata(data);
-          // Auto-select best quality if available
-          if (data.formats && data.formats.length > 0) {
-            setSelectedFormat(data.formats[0].format_id);
+          const formats: VideoFormat[] = Array.isArray(data.formats) ? data.formats : [];
+          const typedMetadata = { ...data, formats } as VideoMetadata;
+          setMetadata(typedMetadata);
+          if (formats.length > 0) {
+            const preferred = formats.find((f) => f.hasAudio) ?? formats[0];
+            setSelectedFormat(preferred?.format_id ?? '');
+          } else {
+            setSelectedFormat('');
           }
         } else {
           setMetadata(null);
+          setSelectedFormat('');
         }
       } catch (err) {
         console.error('Failed to inspect video:', err);
         setMetadata(null);
+        setSelectedFormat('');
       } finally {
         setIsInspecting(false);
       }
@@ -328,12 +337,19 @@ export default function Page() {
     abortRef.current = controller;
 
     try {
+      const chosenFormat = metadata?.formats.find((f) => f.format_id === selectedFormat);
+      const formatToSend = chosenFormat
+        ? chosenFormat.hasAudio
+          ? chosenFormat.format_id
+          : `${chosenFormat.format_id}+bestaudio/best`
+        : selectedFormat || undefined;
+
       const res = await fetch('/api/download', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           url: cleanedUrl,
-          format: selectedFormat || undefined,
+          format: formatToSend,
         }),
         signal: controller.signal,
       });
@@ -532,11 +548,17 @@ export default function Page() {
                   className="input w-full text-sm"
                   disabled={isWorking}
                 >
-                  {metadata.formats.map((format) => (
-                    <option key={format.format_id} value={format.format_id}>
-                      {format.quality} {format.filesize ? `(${(format.filesize / 1024 / 1024).toFixed(1)} MB)` : ''}
-                    </option>
-                  ))}
+                  {metadata.formats.map((format) => {
+                    const sizeLabel = format.filesize ? ` (${(format.filesize / 1024 / 1024).toFixed(1)} MB)` : '';
+                    const noteLabel = format.format_note ? ` – ${format.format_note}` : '';
+                    return (
+                      <option key={format.format_id} value={format.format_id}>
+                        {format.quality}
+                        {noteLabel}
+                        {sizeLabel}
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
             )}
